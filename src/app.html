@@ -330,20 +330,27 @@ function sanshin(out, s0, f, len, sr) {
     out[s0 + i] += (0.75 * cur + 0.35 * hp) * rel;
   }
 }
-let ctx = null, src = null, raf = 0, timeline = [];
+/* iPhoneの消音スイッチが入っていても鳴るよう、WAVにして audio 要素で鳴らす（声のQRと同じ）。
+   audio 要素が使えないときだけ Web Audio で鳴らす */
+let audioEl = null, lastUrl = null, ctx = null, webSrc = null, webStart = 0, playing = false, raf = 0, timeline = [];
+function wavBlob(f, sr) {
+  const n = f.length, buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+  const w = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, "data"); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(f[i] * 32767))), true);
+  return new Blob([buf], { type: "audio/wav" });
+}
 function stop() {
-  if (src) { try { src.stop(); } catch (e) {} src = null; }
+  playing = false;
+  if (audioEl) { audioEl.onended = null; audioEl.pause(); }
+  if (webSrc) { try { webSrc.onended = null; webSrc.stop(); } catch (e) {} webSrc = null; }
   cancelAnimationFrame(raf); clearMarks();
   $("play").setAttribute("aria-label", "弾く");
   $("playIcon").innerHTML = '<path d="M7 4.5v15l13-7.5z"/>';
 }
 function clearMarks() { document.querySelectorAll(".on").forEach(el => el.classList.remove("on")); }
-async function play() {
-  if (src) { stop(); return; }
-  const notes = E.toNotes(boxes); if (!notes.length) return;
-  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-  if (ctx.state === "suspended") await ctx.resume();
-  const sr = ctx.sampleRate, beat = 60 / Number($("tempo").value);
+function renderSound(notes, sr, beat) {
   let total = 0; notes.forEach(n => total += n.beats * beat);
   const out = new Float32Array(Math.ceil((total + 1.2) * sr));
   let t = 0; timeline = [];
@@ -355,15 +362,42 @@ async function play() {
   }
   let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
   if (pk > 0) for (let i = 0; i < out.length; i++) out[i] *= 0.8 / pk;
-  const ab = ctx.createBuffer(1, out.length, sr); ab.copyToChannel(out, 0);
-  src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
-  const start = ctx.currentTime + 0.05; src.start(start);
-  src.onended = () => { if (src) stop(); };
+  return out;
+}
+function playWeb(f, sr) {
+  try {
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") ctx.resume();
+    const ab = ctx.createBuffer(1, f.length, sr); ab.getChannelData(0).set(f);
+    webSrc = ctx.createBufferSource(); webSrc.buffer = ab; webSrc.connect(ctx.destination);
+    webStart = ctx.currentTime + 0.05; webSrc.start(webStart);
+    webSrc.onended = () => { if (playing) stop(); };
+  } catch (e) { stop(); setStatus("この端末では音を鳴らせませんでした。", true); }
+}
+function nowPlaying() {
+  if (webSrc && ctx) return ctx.currentTime - webStart;
+  return audioEl ? audioEl.currentTime : 0;
+}
+function play() {
+  if (playing) { stop(); return; }
+  const notes = E.toNotes(boxes); if (!notes.length) return;
+  try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+  const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(notes, sr, beat);
+  playing = true;
+  // 押したその場で play() を呼ぶ（間に待ちを入れると、iPhoneでは鳴らせなくなる）
+  if (!audioEl) { audioEl = new Audio(); audioEl.preload = "auto"; audioEl.setAttribute("playsinline", ""); }
+  if (lastUrl) URL.revokeObjectURL(lastUrl);
+  lastUrl = URL.createObjectURL(wavBlob(f, sr));
+  audioEl.src = lastUrl;
+  audioEl.onended = () => { if (playing) stop(); };
+  const pr = audioEl.play();
+  if (pr && pr.catch) pr.catch(() => { if (!playing) return; audioEl.onended = null; playWeb(f, sr); });
   $("play").setAttribute("aria-label", "止める");
   $("playIcon").innerHTML = '<rect x="6" y="6" width="12" height="12" rx="1.5"/>';
   let lastKey = "";
   const tick = () => {
-    const now = ctx.currentTime - start, ev = timeline.find(e => now >= e.t && now < e.end);
+    if (!playing) return;
+    const now = nowPlaying(), ev = timeline.find(e => now >= e.t && now < e.end);
     const key = ev ? ev.box + ":" + ev.part + ":" + Math.floor((now - ev.t) / beat) : "";
     if (key !== lastKey) {
       lastKey = key; clearMarks();
@@ -385,7 +419,7 @@ async function play() {
   tick();
 }
 $("play").addEventListener("click", play);
-$("tempo").addEventListener("input", e => { $("tempoVal").textContent = e.target.value; if (src) { stop(); } });
+$("tempo").addEventListener("input", e => { $("tempoVal").textContent = e.target.value; if (playing) stop(); });
 
 buildPicks(); render();
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

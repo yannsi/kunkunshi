@@ -1,5 +1,5 @@
 // 工工四を撮ると鳴る — 一度開けば電波のない所でも使えるように保存する
-const CACHE = "kunkunshi-c258b1e9a5";
+const CACHE = "kunkunshi-ca7d9ef72f";
 const FILES = ["./", "index.html", "youshi.html", "youshi.pdf", "sample.jpg", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png"];
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 self.addEventListener("install", e => {

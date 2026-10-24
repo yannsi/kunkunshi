@@ -444,6 +444,13 @@ function sheetSVG(opts) {
 root.KKS_SHEET = { sheetSVG };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
-<script>document.getElementById("sheet").innerHTML = window.KKS_SHEET.sheetSVG();</script>
+<script>
+document.getElementById("sheet").innerHTML = window.KKS_SHEET.sheetSVG();
+// ホーム画面から開いたアプリでは印刷が効かない端末があるので、PDFを案内する
+if (navigator.standalone || matchMedia("(display-mode: standalone)").matches) {
+  const b = document.querySelector(".row button"); if (b) b.remove();
+  document.querySelector(".tools p").textContent = "ホーム画面のアプリからは印刷できないことがあります。「PDFで保存」したファイルを開いて印刷してください。";
+}
+</script>
 </body>
 </html>
