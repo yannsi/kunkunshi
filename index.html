@@ -222,7 +222,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.5.0</span>
+    <span>合＝ド で鳴らします　試作版 0.5.1</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -1293,7 +1293,7 @@ function stringsNow() {
 }
 function buildStrings() {
   const box = $("strings"); box.innerHTML = "";
-  $("chinSub").textContent = `${(E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).name}・合＝${$("base").selectedOptions[0].textContent}。弦を押さえずに鳴らして、3本をこの高さに合わせます。押すと見本の音が鳴ります。`;
+  $("chinSub").textContent = `${(E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).name}・合＝${$("base").selectedOptions[0].textContent}。弦を押さえずに鳴らして、3本をこの高さに合わせます。押すと見本の音が1回鳴ります。`;
   stringsNow().forEach((st, i) => {
     const b = document.createElement("button"); b.type = "button"; b.className = "string"; b.dataset.i = i;
     b.innerHTML = `<small>${st.name}</small><b>${st.ch}</b><span>${st.note}</span>`;
@@ -1303,8 +1303,9 @@ function buildStrings() {
 }
 function playTone(st) {
   stop();
-  const sr = 44100, out = new Float32Array(Math.ceil(3.2 * sr));
-  for (let k = 0; k < 3; k++) sanshin(out, Math.floor(k * 1.0 * sr), st.freq, 0.9, sr, 1);
+  // 1回だけはじいて、長めに響かせる（もう一度聞きたいときは、また押す）
+  const sr = 44100, out = new Float32Array(Math.ceil(2.6 * sr));
+  sanshin(out, 0, st.freq, 2.0, sr, 1);
   let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
   for (let i = 0; i < out.length; i++) out[i] *= 0.8 / pk;
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
