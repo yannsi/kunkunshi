@@ -156,7 +156,7 @@ footer a { color: var(--on-ai-dim); }
   </ol>
 
   <footer>
-    <span>本調子・合＝ド で鳴らします</span>
+    <span>本調子・合＝ド で鳴らします　試作版 0.1.2</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -422,7 +422,12 @@ $("play").addEventListener("click", play);
 $("tempo").addEventListener("input", e => { $("tempoVal").textContent = e.target.value; if (playing) stop(); });
 
 buildPicks(); render();
-if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {}));
+  // 新しい版が入ったら、まだ何も読んでいなければその場で入れ替える
+  let swapped = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!swapped && lastUsed() < 0 && !playing) { swapped = true; location.reload(); } });
+}
 </script>
 </body>
 </html>

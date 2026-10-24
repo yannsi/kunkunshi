@@ -18,7 +18,9 @@ self.addEventListener("fetch", e => {
   if (e.request.mode === "navigate") {
     // ページはネットを先に見て、4秒でつながらなければ保存分
     e.respondWith(Promise.race([
-      fetch(e.request).then(r => { const c = r.clone(); caches.open(CACHE).then(k => k.put(e.request, c)); return r; }),
+      // ブラウザに残った古いページを使わず、必ずサーバーに新しい版を確かめる
+      fetch(new Request(e.request.url, { cache: "no-cache", credentials: "same-origin" }))
+        .then(r => { const c = r.clone(); caches.open(CACHE).then(k => k.put(e.request, c)); return r; }),
       new Promise((_, rej) => setTimeout(rej, 4000))
     ]).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match("index.html"))));
     return;
