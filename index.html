@@ -161,6 +161,14 @@ footer a { color: var(--on-ai-dim); }
       </select>
       <span id="tuningNote"></span>
     </label>
+    <label class="tuning">通して弾く回数
+      <select id="times">
+        <option value="1">1回</option>
+        <option value="2">2回</option>
+        <option value="3">3回</option>
+      </select>
+      <span>前奏（三線だけの部分）も入れて、最初からくり返します</span>
+    </label>
     <div class="score" id="score"></div>
     <p class="empty-note" id="emptyNote">まだ何も読んでいません。工工四のPDFや写真を入れるか、「見本の写真で試す」を押してください。マスをタップすると字を入れたり直したりできます。</p>
     <div class="legend" id="legend" hidden><span><i></i>読みに自信がないマス</span><span><i class="g"></i>手で直したマス</span><span>マスをタップで直せます</span></div>
@@ -173,7 +181,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.3.1</span>
+    <span>合＝ド で鳴らします　試作版 0.3.2</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -1036,6 +1044,7 @@ $("sample").addEventListener("click", async () => {
   } catch (e) { setStatus("見本の写真を開けませんでした。ネットにつながっているか確かめてください。", true); }
 });
 $("tuning").addEventListener("change", () => { stop(); $("tuningNote").textContent = ""; render(); });
+$("times").addEventListener("change", () => stop());
 
 /* ---------- 三線の音 ---------- */
 function sanshin(out, s0, f, len, sr, gain) {
@@ -1104,7 +1113,8 @@ function nowPlaying() {
 }
 function play() {
   if (playing) { stop(); return; }
-  const notes = E.toNotes(boxes, $("tuning").value); if (!notes.length) return;
+  const once = E.toNotes(boxes, $("tuning").value); if (!once.length) return;
+  const notes = []; for (let k = 0; k < Number($("times").value); k++) notes.push(...once);
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
   const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(notes, sr, beat);
   playing = true;
