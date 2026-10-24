@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>工工四を撮ると鳴る</title>
+<meta name="description" content="紙に書いた工工四をスマホで撮ると、三線の音で弾いてくれます。">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f2b45">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="工工四カメラ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Klee+One:wght@600&display=swap">
+<style>
+/* 琉球藍の地に、紙の工工四。弾いている音だけ紅型の黄色で光る */
+:root {
+  --ai: #1f2b45;        /* 琉球藍 */
+  --ai-2: #2c3b5c;
+  --on-ai: #eef0f4;
+  --on-ai-dim: #aeb6c8;
+  --kami: #fbfaf6;      /* 用紙 */
+  --sumi: #1d1d1f;      /* 墨 */
+  --keisen: #b9b6ad;    /* マスの線 */
+  --kiiro: #f2b705;     /* 紅型の黄 */
+  --beni: #c8322d;      /* 紅 */
+  --usu: #6d6a62;
+  --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  --font-fude: "Klee One", "BIZ UDPGothic", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ai); color: var(--on-ai);
+  font-family: var(--font-ui); font-size: 16px; line-height: 1.7;
+  padding: env(safe-area-inset-top, 0) max(16px, env(safe-area-inset-right, 0)) calc(96px + env(safe-area-inset-bottom, 0)) max(16px, env(safe-area-inset-left, 0));
+}
+.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 22px; padding-top: 22px; }
+h1 { font-family: var(--font-fude); font-weight: 600; font-size: clamp(1.9rem, 8vw, 2.4rem); line-height: 1.25; margin: 0; letter-spacing: 0.04em; }
+.lead { margin: 6px 0 0; color: var(--on-ai-dim); font-size: 0.95rem; }
+button, .btn { font: inherit; cursor: pointer; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px;
+  border-radius: 12px; border: 1.5px solid var(--on-ai-dim); background: transparent; color: var(--on-ai);
+  font-weight: 700; text-decoration: none; padding: 8px 12px; text-align: center; line-height: 1.3;
+}
+.btn.main { grid-column: 1 / -1; background: var(--kiiro); border-color: var(--kiiro); color: var(--sumi); min-height: 60px; font-size: 1.1rem; }
+.btn:focus-visible, .box:focus-visible, .pick:focus-visible, input:focus-visible { outline: 3px solid var(--kiiro); outline-offset: 2px; }
+.btn svg { width: 22px; height: 22px; flex: none; }
+.sub { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.9rem; }
+.sub a, .sub button { color: var(--on-ai); background: none; border: 0; padding: 4px 0; text-decoration: underline; text-decoration-color: var(--kiiro); text-underline-offset: 4px; }
+.status { min-height: 1.7em; color: var(--on-ai-dim); font-size: 0.92rem; margin: 0; }
+.status.err { color: #ffd2cf; }
+
+/* 用紙 */
+.paper { background: var(--kami); color: var(--sumi); border-radius: 6px; padding: 14px 12px 12px; box-shadow: 0 1px 0 rgba(0,0,0,.25); }
+.paper-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 2px 10px; }
+.paper-head h2 { margin: 0; font-family: var(--font-fude); font-weight: 600; font-size: 1.15rem; }
+.paper-head p { margin: 0; font-size: 0.78rem; color: var(--usu); }
+.score { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.col { flex: none; display: grid; grid-template-rows: auto repeat(12, auto); width: 44px; }
+.colno { text-align: center; font-size: 0.7rem; color: var(--usu); line-height: 1.4; }
+.box {
+  position: relative; height: 44px; border: 1px solid var(--keisen); margin-top: -1px; background: var(--kami);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; color: var(--sumi);
+  font-family: var(--font-fude); font-weight: 600; font-size: 1.5rem; line-height: 1;
+}
+.box:nth-child(4n+2):not(:nth-child(2)) { border-top-color: #8f8b82; border-top-width: 2px; }
+.box .half { font-size: 1.02rem; line-height: 1.05; }
+.box.unsure::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--beni); }
+.box.fixed::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #3f8f5a; }
+.box .p { padding: 0 2px; border-radius: 3px; }
+.box .p.on, .box.on:not(.multi) { background: var(--kiiro); }
+.box.hold.on { background: #fbe7a8; }
+.empty-note { font-size: 0.85rem; color: var(--usu); margin: 10px 2px 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.78rem; color: var(--usu); margin: 10px 2px 0; }
+.legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--beni); margin-right: 5px; transform: translateY(-1px); }
+.legend i.g { background: #3f8f5a; }
+
+/* 下の演奏バー */
+.bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--ai-2);
+  border-top: 1px solid rgba(255,255,255,.12); padding: 10px max(16px, env(safe-area-inset-right, 0)) calc(10px + env(safe-area-inset-bottom, 0)) max(16px, env(safe-area-inset-left, 0));
+}
+.bar-in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
+.play { width: 64px; height: 52px; border-radius: 12px; border: 0; background: var(--kiiro); color: var(--sumi); display: grid; place-items: center; }
+.play:disabled { background: #4a5878; color: #8d97ad; cursor: default; }
+.play svg { width: 26px; height: 26px; }
+.tempo { display: grid; gap: 2px; font-size: 0.82rem; color: var(--on-ai-dim); }
+.tempo b { color: var(--on-ai); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--kiiro); height: 28px; margin: 0; }
+
+/* 字を直す */
+dialog { color-scheme: light; border: 0; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0)); width: 100%; max-width: 560px; margin: auto auto 0; background: var(--kami); color: var(--sumi); }
+dialog::backdrop { background: rgba(10,14,24,.55); }
+dialog h3 { margin: 0 0 4px; font-size: 1rem; }
+dialog p { margin: 0 0 12px; font-size: 0.85rem; color: var(--usu); }
+.picks { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.pick { height: 52px; border-radius: 10px; border: 1.5px solid var(--keisen); background: #fff; font-family: var(--font-fude); font-weight: 600; font-size: 1.45rem; color: var(--sumi); }
+.pick.word { font-family: var(--font-ui); font-size: 0.9rem; font-weight: 700; }
+.pick[aria-pressed="true"] { background: var(--sumi); color: var(--kami); border-color: var(--sumi); }
+.dlg-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; }
+.dlg-foot label { font-size: 0.9rem; display: flex; gap: 8px; align-items: center; }
+.dlg-foot input { width: 20px; height: 20px; accent-color: var(--sumi); }
+.dlg-foot button { min-height: 44px; padding: 0 20px; border-radius: 10px; border: 0; background: var(--sumi); color: var(--kami); font-weight: 700; }
+
+.how { color: var(--on-ai-dim); font-size: 0.88rem; margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+footer { font-size: 0.8rem; color: var(--on-ai-dim); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+footer a { color: var(--on-ai-dim); }
+.photo { display: none; width: 100%; border-radius: 6px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) { .box .p, .box { transition: background-color .08s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>工工四を撮ると鳴る</h1>
+    <p class="lead">紙に書いた工工四をスマホで撮ると、三線の音で弾きます。読み取りはこの端末の中だけで行い、写真はどこにも送りません。</p>
+  </header>
+
+  <section class="actions" aria-label="撮る">
+    <label class="btn main" for="cam">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      工工四を撮る
+    </label>
+    <input id="cam" class="vh" type="file" accept="image/*" capture="environment">
+    <label class="btn" for="pic">写真から選ぶ</label>
+    <input id="pic" class="vh" type="file" accept="image/*">
+    <a class="btn" href="youshi.html">用紙を印刷する</a>
+  </section>
+  <div class="sub">
+    <button type="button" id="sample">見本の写真で試す</button>
+    <a href="youshi.pdf" download>用紙のPDFを保存</a>
+  </div>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <section class="paper" aria-labelledby="scoreTitle">
+    <div class="paper-head">
+      <h2 id="scoreTitle">読み取った工工四</h2>
+      <p id="scoreInfo">右の列から、上から下へ</p>
+    </div>
+    <div class="score" id="score"></div>
+    <p class="empty-note" id="emptyNote">まだ何も読んでいません。用紙に書いて撮るか、「見本の写真で試す」を押してください。マスをタップすると字を入れたり直したりできます。</p>
+    <div class="legend" id="legend" hidden><span><i></i>読みに自信がないマス</span><span><i class="g"></i>手で直したマス</span><span>マスをタップで直せます</span></div>
+  </section>
+
+  <ol class="how">
+    <li>「用紙を印刷する」で用紙を出し、黒か青のペンで書きます。</li>
+    <li>1マスが1拍です。〇は休み、何も書かないマスは前の音をのばします。縦に2つ書くと半拍ずつになります。</li>
+    <li>四隅の黒い四角が全部写るように、真上から撮ってください。</li>
+  </ol>
+
+  <footer>
+    <span>本調子・合＝ド で鳴らします</span>
+    <a href="https://yannsi.github.io/">yannsi工作室</a>
+  </footer>
+</div>
+
+<div class="bar">
+  <div class="bar-in">
+    <button class="play" id="play" type="button" aria-label="弾く" disabled>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" id="playIcon"><path d="M7 4.5v15l13-7.5z"/></svg>
+    </button>
+    <label class="tempo">
+      <span>速さ　<b id="tempoVal">100</b>（1分に打つ拍の数）</span>
+      <input type="range" id="tempo" min="50" max="180" step="5" value="100">
+    </label>
+  </div>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <h3 id="dlgTitle">このマスの字</h3>
+  <p id="dlgHint">選ぶとすぐ変わります。</p>
+  <div class="picks" id="picks"></div>
+  <div class="dlg-foot">
+    <label><input type="checkbox" id="twoMode">半拍2つにする</label>
+    <button type="button" id="dlgClose">閉じる</button>
+  </div>
+</dialog>
+
+<script>/*ENGINE*/</script>
+<script>/*MODEL*/</script>
+<script>
+"use strict";
+const E = window.KKS_ENGINE, S = E.SHEET;
+E.loadNet(window.KKS_MODEL);
+const $ = id => document.getElementById(id);
+const CHARS = ["合","乙","老","四","上","中","尺","工","五","六","七","八","九"];
+const NAMES = { "合":"ド","乙":"レ","老":"ミ","四":"ファ","上":"ソ","中":"ラ","尺":"シ♭","工":"ド","五":"レ","六":"ミ","七":"ファ","八":"ソ","九":"ラ" };
+let boxes = blank(); // 読む順に84マス
+let unsureSet = new Set(), fixedSet = new Set();
+
+function blank() { return Array.from({ length: S.cols * S.rows }, () => ({ kind: "empty", parts: [] })); }
+function setStatus(t, err) { const s = $("status"); s.textContent = t; s.classList.toggle("err", !!err); }
+
+/* ---------- 楽譜を描く ---------- */
+function lastUsed() { let l = -1; boxes.forEach((b, i) => { if (b.kind !== "empty") l = i; }); return l; }
+function render() {
+  const sc = $("score"); sc.innerHTML = "";
+  const last = lastUsed(), nCols = Math.max(1, Math.min(S.cols, Math.floor(last / S.rows) + 2));
+  for (let c = 0; c < nCols; c++) {
+    const col = document.createElement("div"); col.className = "col";
+    col.innerHTML = `<div class="colno">${c + 1}</div>`;
+    for (let r = 0; r < S.rows; r++) {
+      const i = c * S.rows + r, b = boxes[i], el = document.createElement("button");
+      el.type = "button"; el.className = "box"; el.dataset.i = i;
+      if (b.kind === "note") {
+        if (b.parts.length === 1) { el.innerHTML = `<span class="p">${b.parts[0].label}</span>`; }
+        else { el.classList.add("multi"); el.innerHTML = b.parts.map(p => `<span class="p half">${p.label}</span>`).join(""); }
+      }
+      if (unsureSet.has(i)) el.classList.add("unsure");
+      if (fixedSet.has(i)) el.classList.add("fixed");
+      el.setAttribute("aria-label", `${c + 1}列目 ${r + 1}マス目：${b.kind === "empty" ? "空き" : b.parts.map(p => p.label === "〇" ? "休み" : p.label).join("と")}`);
+      el.addEventListener("click", () => openPicker(i));
+      col.appendChild(el);
+    }
+    sc.appendChild(col);
+  }
+  const any = last >= 0;
+  $("emptyNote").hidden = any; $("legend").hidden = !any;
+  $("play").disabled = !any;
+  const n = E.toNotes(boxes).length;
+  $("scoreInfo").textContent = any ? `${n}音・右の列から、上から下へ` : "右の列から、上から下へ";
+}
+
+/* ---------- 字を直す ---------- */
+let editing = -1, twoSel = [];
+function buildPicks() {
+  const p = $("picks"); p.innerHTML = "";
+  const opts = CHARS.map(c => [c, c, NAMES[c]]).concat([["〇", "〇", "休み"], ["", "空き", "前の音をのばす"]]);
+  for (const [v, t, name] of opts) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "pick" + (v === "" ? " word" : "");
+    b.textContent = t; b.dataset.v = v; b.setAttribute("aria-label", v === "" ? "空きにする" : `${t}（${name}）`);
+    b.addEventListener("click", () => choose(v)); p.appendChild(b);
+  }
+}
+function syncPicks() {
+  const b = boxes[editing], two = $("twoMode").checked;
+  const cur = two ? twoSel : (b.kind === "empty" ? [""] : b.parts.map(p => p.label));
+  $("picks").querySelectorAll(".pick").forEach(el => {
+    el.setAttribute("aria-pressed", cur.includes(el.dataset.v) ? "true" : "false");
+    el.disabled = two && el.dataset.v === "";
+  });
+  $("dlgHint").textContent = two ? (twoSel.length === 0 ? "上の音を選んでください。" : "下の音を選んでください。") : "選ぶとすぐ変わります。";
+}
+function openPicker(i) {
+  stop(); editing = i; twoSel = [];
+  const b = boxes[i], c = Math.floor(i / S.rows) + 1, r = i % S.rows + 1;
+  $("dlgTitle").textContent = `${c}列目・${r}マス目の字`;
+  $("twoMode").checked = b.parts.length === 2;
+  syncPicks(); $("dlg").showModal();
+}
+function choose(v) {
+  const two = $("twoMode").checked;
+  if (two) {
+    twoSel.push(v);
+    if (twoSel.length < 2) { syncPicks(); return; }
+    boxes[editing] = { kind: "note", parts: twoSel.map(l => ({ label: l, conf: 1 })) };
+    twoSel = [];
+  } else {
+    boxes[editing] = v === "" ? { kind: "empty", parts: [] } : { kind: "note", parts: [{ label: v, conf: 1 }] };
+  }
+  unsureSet.delete(editing); fixedSet.add(editing);
+  render(); syncPicks();
+  if (!two || twoSel.length === 0) $("dlg").close();
+}
+$("twoMode").addEventListener("change", () => { twoSel = []; syncPicks(); });
+$("dlgClose").addEventListener("click", () => $("dlg").close());
+$("dlg").addEventListener("click", e => { if (e.target === $("dlg")) $("dlg").close(); });
+
+/* ---------- 写真を読む ---------- */
+async function readFile(file) {
+  stop();
+  setStatus("写真を開いています…");
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch (e) {
+    try { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); }); }
+    catch (e2) { setStatus("この写真は開けませんでした。JPEGかPNGの写真で試してください。", true); return; }
+  }
+  await readImage(bmp);
+}
+async function readImage(bmp) {
+  setStatus("工工四を読んでいます…");
+  await new Promise(r => setTimeout(r, 30));
+  const w0 = bmp.width, h0 = bmp.height, k = Math.min(1, 2400 / Math.max(w0, h0));
+  const w = Math.round(w0 * k), h = Math.round(h0 * k);
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d", { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, w, h);
+  const t0 = performance.now();
+  const res = E.readSheet(cx.getImageData(0, 0, w, h).data, w, h);
+  if (!res.ok) {
+    setStatus("用紙の四隅の黒い四角が見つかりませんでした。4つとも写るように、明るい所で真上から撮り直してください。", true);
+    return;
+  }
+  boxes = res.cells.map(c => ({ kind: c.kind, parts: c.parts.map(p => ({ label: p.label, conf: p.conf })) }));
+  unsureSet = new Set(); fixedSet = new Set();
+  res.cells.forEach((c, i) => { if (c.kind === "note" && c.parts.some(p => p.conf < 0.85)) unsureSet.add(i); });
+  render();
+  const n = boxes.filter(b => b.kind !== "empty").length, u = unsureSet.size;
+  setStatus(`${n}マス読みました（${Math.round(performance.now() - t0)}ミリ秒）。` + (u ? `赤い点の${u}マスは読みに自信がありません。違っていたらタップして直してください。` : "▶で弾けます。"));
+}
+$("cam").addEventListener("change", e => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; });
+$("pic").addEventListener("change", e => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; });
+$("sample").addEventListener("click", async () => {
+  stop(); setStatus("見本の写真を開いています…");
+  try {
+    const r = await fetch("sample.jpg"); const bl = await r.blob(); await readFile(bl);
+  } catch (e) { setStatus("見本の写真を開けませんでした。ネットにつながっているか確かめてください。", true); }
+});
+
+/* ---------- 三線の音 ---------- */
+function sanshin(out, s0, f, len, sr) {
+  /* カープラス・ストロング法で弦をはじいた音を作る（声のQRと同じ） */
+  const N = Math.max(2, Math.round(sr / f)), buf = new Float32Array(N);
+  let seed = (s0 % 9973) + 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+  for (let i = 0; i < N; i++) buf[i] = 0.6 * rnd() + 0.4 * (1 - 2 * i / N);
+  const hold = len + 0.15, n = Math.min(out.length - s0, Math.floor((hold + 0.35) * sr));
+  let idx = 0, prev = 0; const decay = 0.9965;
+  for (let i = 0; i < n; i++) {
+    const cur = buf[idx], nxt = buf[(idx + 1) % N];
+    buf[idx] = decay * (0.55 * cur + 0.45 * nxt); idx = (idx + 1) % N;
+    const t = i / sr, rel = t > hold ? Math.exp(-(t - hold) * 14) : 1;
+    const hp = cur - 0.6 * prev; prev = cur;
+    out[s0 + i] += (0.75 * cur + 0.35 * hp) * rel;
+  }
+}
+let ctx = null, src = null, raf = 0, timeline = [];
+function stop() {
+  if (src) { try { src.stop(); } catch (e) {} src = null; }
+  cancelAnimationFrame(raf); clearMarks();
+  $("play").setAttribute("aria-label", "弾く");
+  $("playIcon").innerHTML = '<path d="M7 4.5v15l13-7.5z"/>';
+}
+function clearMarks() { document.querySelectorAll(".on").forEach(el => el.classList.remove("on")); }
+async function play() {
+  if (src) { stop(); return; }
+  const notes = E.toNotes(boxes); if (!notes.length) return;
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === "suspended") await ctx.resume();
+  const sr = ctx.sampleRate, beat = 60 / Number($("tempo").value);
+  let total = 0; notes.forEach(n => total += n.beats * beat);
+  const out = new Float32Array(Math.ceil((total + 1.2) * sr));
+  let t = 0; timeline = [];
+  for (const n of notes) {
+    const len = n.beats * beat;
+    if (n.pitch > 0) sanshin(out, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch - 69) / 12), len, sr);
+    timeline.push({ t, end: t + len, box: n.box, part: n.part, beats: n.beats });
+    t += len;
+  }
+  let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
+  if (pk > 0) for (let i = 0; i < out.length; i++) out[i] *= 0.8 / pk;
+  const ab = ctx.createBuffer(1, out.length, sr); ab.copyToChannel(out, 0);
+  src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
+  const start = ctx.currentTime + 0.05; src.start(start);
+  src.onended = () => { if (src) stop(); };
+  $("play").setAttribute("aria-label", "止める");
+  $("playIcon").innerHTML = '<rect x="6" y="6" width="12" height="12" rx="1.5"/>';
+  let lastKey = "";
+  const tick = () => {
+    const now = ctx.currentTime - start, ev = timeline.find(e => now >= e.t && now < e.end);
+    const key = ev ? ev.box + ":" + ev.part + ":" + Math.floor((now - ev.t) / beat) : "";
+    if (key !== lastKey) {
+      lastKey = key; clearMarks();
+      if (ev) {
+        // のばしている間は、そのマスと空きマスを順に光らせる
+        const extra = Math.floor((now - ev.t) / beat), b = boxes[ev.box];
+        const idx = ev.box + (b && b.kind === "note" && b.parts.length === 1 ? extra : 0);
+        const el = document.querySelector(`.box[data-i="${idx}"]`);
+        if (el) {
+          if (idx !== ev.box) el.classList.add("on", "hold");
+          else if (el.classList.contains("multi")) { const p = el.querySelectorAll(".p")[ev.part]; if (p) p.classList.add("on"); }
+          else el.classList.add("on");
+          if (extra === 0 || idx !== ev.box) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+        }
+      }
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+$("play").addEventListener("click", play);
+$("tempo").addEventListener("input", e => { $("tempoVal").textContent = e.target.value; if (src) { stop(); } });
+
+buildPicks(); render();
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>

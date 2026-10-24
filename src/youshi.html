@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工工四の用紙</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+@page { size: A4 portrait; margin: 0; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #1f2b45; color: #eef0f4; font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; }
+.tools { max-width: 560px; margin: 0 auto; padding: 16px; display: grid; gap: 10px; }
+.tools p { margin: 0; font-size: 0.9rem; color: #aeb6c8; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+.row a, .row button { font: inherit; font-weight: 700; min-height: 48px; padding: 0 18px; border-radius: 12px; display: inline-flex; align-items: center; text-decoration: none; cursor: pointer; }
+.row button { background: #f2b705; border: 0; color: #1d1d1f; }
+.row a { border: 1.5px solid #aeb6c8; color: #eef0f4; }
+a:focus-visible, button:focus-visible { outline: 3px solid #f2b705; outline-offset: 2px; }
+.sheet { padding: 0 16px 24px; }
+.sheet svg { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+@media print {
+  body { background: #fff; }
+  .tools { display: none; }
+  .sheet { padding: 0; }
+  .sheet svg { width: 210mm; height: 297mm; max-width: none; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class="tools">
+  <div class="row"><button type="button" onclick="print()">印刷する</button><a href="youshi.pdf" download>PDFで保存</a><a href="./">戻る</a></div>
+  <p>A4・縦で印刷してください。「用紙に合わせる」で少し小さくなっても読めます。コンビニで印刷するときは「PDFで保存」したファイルを使うと確実です。</p>
+</div>
+<div class="sheet" id="sheet"></div>
+<script>/*ENGINE*/</script>
+<script>/*SHEETJS*/</script>
+<script>document.getElementById("sheet").innerHTML = window.KKS_SHEET.sheetSVG();</script>
+</body>
+</html>
