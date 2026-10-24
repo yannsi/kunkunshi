@@ -333,8 +333,38 @@ function bestSingle(r) { // 「空」「二」以外でいちばん確からし�
   let k = -1; r.probs.forEach((v, i) => { if (LABELS[i] !== "空" && LABELS[i] !== "二" && (k < 0 || v > r.probs[k])) k = i; });
   return { label: LABELS[k], conf: r.probs[k], probs: r.probs };
 }
-function readCell(cell) {
-  const c = inner(cell), { m, ink, N } = inkMask(c);
+/* 字の右上に付く小さな印（「 、など）を取り除く：小さくて右側だけにある部分 */
+function cleanMarks(m, N, strict) {
+  const comps = label(m, N, N, 1), lab = labelMap(m, N, N);
+  let total = 0; comps.forEach(k => total += k.area);
+  // 候補：小さく、右側にあるもの。ただし字の本体（ほかの部分）の右端より右に離れているものだけ
+  // （ぼけた写真では字の線がちぎれて小さな部分になるので、本体と横に重なるものは消さない）
+  const cand = comps.filter(k => k.area < total * 0.35 && k.x0 > N * 0.6);
+  const body = comps.filter(k => !cand.includes(k));
+  if (!body.length) return total;
+  const right = Math.max(...body.map(k => k.x1));
+  const top = Math.min(...body.map(k => k.y0)), bot = Math.max(...body.map(k => k.y1)), bh = bot - top;
+  // 本体の右端からすき間をあけて離れていて、背の低いもの（字の線のちぎれた部分は背が高い）
+  // （小さな字では印が字に近く背も高めなので、strict でなければ右側の小さな部分はすべて消す）
+  const drop = new Set(cand.filter(k => !strict || (k.x0 >= right + 1 && (k.y1 - k.y0) < bh * 0.5)).map(k => k.id));
+  if (!drop.size) return total;
+  let ink = 0; for (let i = 0; i < m.length; i++) { if (drop.has(lab[i])) m[i] = 0; ink += m[i]; }
+  return ink;
+}
+function readCell(cell, opts) {
+  const c = inner(cell), mk = inkMask(c), { m, N } = mk;
+  const plain = readMask(m, N, mk.ink);
+  if (!(opts && opts.marks) || mk.ink < INK_MIN) return plain;
+  // 右の小さな印を消した形でも読み、確かな方をとる（ぼけて字の線がちぎれたときに、字の一部を印とまちがえて消さないように）
+  const m2 = Uint8Array.from(m), ink2 = cleanMarks(m2, N, opts.marks !== "prefer");
+  if (ink2 === mk.ink) return plain;
+  const cleaned = readMask(m2, N, ink2);
+  const score = r => r.kind === "note" ? 1 + Math.min(...r.parts.map(p => p.conf)) : 0;
+  // 小さな字には印が付いていることが多いので、消した形で読めればそちらを使う
+  if (opts.marks === "prefer") return cleaned;
+  return score(cleaned) > score(plain) ? cleaned : plain;
+}
+function readMask(m, N, ink) {
   if (ink < INK_MIN) return { kind: "empty", parts: [], ink };
   const whole = classify(normalize(m, N, N));
   if (whole.label === "空") return { kind: "empty", parts: [], ink, conf: whole.conf };
@@ -518,9 +548,44 @@ function rectifyBook(img) {
   }
   return { g: out, w: W, h: H, s: img.s, th: best.th, k: best.k };
 }
-function readBook(rgba, w, h) {
+/* マスの下の線にまたがって書かれた小さな字を読む（なければ null）。
+   横線は (1) 全部消す (2) 字の左右だけ消す（線と重なる字の横棒を残す）の両方で読んで、確かな方をとる */
+function readSmall(img, b) {
+  const W = b.x1 - b.x0, H = b.y1 - b.y0;
+  const base = sampleBox(img, { x0: b.x0, x1: b.x1, y0: b.y1 - W / 2, y1: b.y1 + W / 2 }), k = CELL / W, keep = Math.min(0.2 * H * k, CELL / 2);
+  const vals = Float32Array.from(base).sort(), paper = vals[Math.floor(vals.length * 0.9)];
+  for (let r = 0; r < CELL; r++) if (Math.abs(r + 0.5 - CELL / 2) > keep) for (let x = 0; x < CELL; x++) base[r * CELL + x] = paper;
+  const isLine = r => { let n = 0; for (let x = 0; x < CELL; x++) if (base[r * CELL + x] < paper - 0.2) n++; return n >= CELL * 0.6; };
+  let a = -1, z = -1;
+  for (let r = CELL / 2 - 10; r <= CELL / 2 + 10; r++) if (isLine(r)) { if (a < 0) a = r; z = r; }
+  const tries = [base];
+  if (a >= 0) {
+    const ra = Math.max(0, a - 2), rz = Math.min(CELL - 1, z + 2);
+    // 字の左右の広がり：線の上下にインクがある列
+    let gx0 = CELL, gx1 = -1;
+    for (let x = MARGIN + 3; x < CELL * 0.62; x++) {   // 右側の印（「 など）は含めない
+      let n = 0; for (let r = 0; r < CELL; r++) if ((r < ra || r > rz) && base[r * CELL + x] < paper - 0.25) n++;
+      if (n >= 2) { if (x < gx0) gx0 = x; gx1 = x; }
+    }
+    const fill = (only) => { const c = Float32Array.from(base);
+      for (let x = 0; x < CELL; x++) { if (only && x >= gx0 - 1 && x <= gx1 + 1) continue;
+        const top = c[ra * CELL + x], bot = c[rz * CELL + x];
+        for (let r = ra + 1; r < rz; r++) c[r * CELL + x] = top + (bot - top) * (r - ra) / (rz - ra); }
+      return c; };
+    tries[0] = fill(false);
+    if (gx1 >= gx0) tries.push(fill(true));
+  }
+  let best = null;
+  for (const cell of tries) {
+    const res = readCell(cell, { marks: "prefer" });
+    if (res.kind !== "note" || res.parts.length !== 1) continue;
+    if (!best || res.parts[0].conf > best.conf) best = res.parts[0];
+  }
+  return best && best.conf >= 0.5 ? best : null;
+}
+function readBook(rgba, w, h, maxSide) {
   const gray = toGray(rgba, w, h);
-  let img = downscale(gray, w, h, 2400);
+  let img = downscale(gray, w, h, maxSide || 2400);
   let cols = findBookGrid(img.g, img.w, img.h);
   // 斜めに写っていれば直して探し直し、マスが多く見つかった方を使う
   const fixed = rectifyBook(img);
@@ -533,7 +598,11 @@ function readBook(rgba, w, h) {
   cols.forEach((col, c) => {
     for (let r = 0; r < rows; r++) {
       const b = col.boxes[r];
-      const res = b ? readCell(sampleBox(img, b)) : { kind: "empty", parts: [], ink: 0 };
+      const res = b ? readCell(sampleBox(img, b), { marks: true }) : { kind: "empty", parts: [], ink: 0 };
+      if (b && res.kind !== "empty" && res.parts.length === 1) {
+        const small = readSmall(img, b);
+        if (small) { res.parts.push(small); res.small = true; }
+      }
       res.c = c; res.r = r; cells.push(res);
     }
   });
@@ -541,10 +610,10 @@ function readBook(rgba, w, h) {
     grid: cols.map(c => c.boxes.map(b => [b.x0 / img.s, b.y0 / img.s, b.x1 / img.s, b.y1 / img.s])) };
 }
 /* 写真1枚を読む：まず専用の用紙（四隅の目印）、なければ本のマス目として読む */
-function readAny(rgba, w, h) {
+function readAny(rgba, w, h, maxSide) {
   const a = readSheet(rgba, w, h);
   if (a.ok) { a.kind = "sheet"; a.cols = SHEET.cols; a.rows = SHEET.rows; return a; }
-  const b = readBook(rgba, w, h);
+  const b = readBook(rgba, w, h, maxSide);
   if (b.ok) b.kind = "book";
   return b;
 }
