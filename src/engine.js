@@ -443,7 +443,9 @@ function findBookGrid(g, w, h) {
       const n = Math.max(1, Math.round(gh / med)); // 線が消えて2マスつながって見えるとき
       for (let j = 0; j < n; j++) boxes.push({ x0: A.x, x1: B.x, y0: ys[k - 1] + gh * j / n, y1: ys[k - 1] + gh * (j + 1) / n });
     }
-    if (boxes.length >= 4) cols.push({ x: (A.x + B.x) / 2, boxes });
+    // 右どなりの細い欄（歌詞の欄）。くり返しの矢印や声出しの○がここに書かれる
+    const C = vlines[i + 2], strip = C && C.x - B.x < bw * 1.6 ? { x0: Math.round(B.xe + 3), x1: Math.round(C.xs - 3) } : null;
+    if (boxes.length >= 4) cols.push({ x: (A.x + B.x) / 2, boxes, strip });
   }
   cols.sort((a, b) => b.x - a.x);  // 右から読む
   // 線がかすれて見つからなかったマスは、いちばん近い「全部そろった列」の高さに合わせて補う
@@ -458,7 +460,41 @@ function findBookGrid(g, w, h) {
       return own || { x0, x1, y0: rb.y0, y1: rb.y1, guessed: true };
     });
   }
+  for (const col of cols) col.marks = col.strip ? findStripMarks(dark, w, h, col) : [];
   return cols;
+}
+/* 歌詞の欄の印を探す：短い横線（はじまり・おわりの位置）から縦線がのび、先に矢印か○が付いている形。
+   横線が上にあれば「ここから」、下にあれば「ここまで」。矢印はくり返し、○は声出し（歌う所） */
+function findStripMarks(dark, w, h, col) {
+  const { x0, x1 } = col.strip, sw = x1 - x0; if (sw < 4) return [];
+  const yTop = Math.max(0, Math.floor(col.boxes[0].y0) - 4), yBot = Math.min(h, Math.ceil(col.boxes[col.boxes.length - 1].y1) + 12);
+  const W = sw, H = yBot - yTop, m = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) m[y * W + x] = dark[(y + yTop) * w + x + x0];
+  const boxH = (col.boxes[col.boxes.length - 1].y1 - col.boxes[0].y0) / col.boxes.length;
+  const out = [];
+  for (const k of label(m, W, H, 8)) {
+    const kh = k.y1 - k.y0; if (kh < boxH * 0.4 || kh > boxH * 4) continue;
+    // 横線がどちらの端にあるか：端の数行の横の広がり
+    const rowW = y => { let a = W, b = -1; for (let x = 0; x < W; x++) if (m[y * W + x]) { if (x < a) a = x; b = x; } return b < 0 ? 0 : b - a + 1; };
+    const headW = Math.max(rowW(k.y0), rowW(k.y0 + 1), rowW(k.y0 + 2)), tailW = Math.max(rowW(k.y1 - 1), rowW(k.y1 - 2), rowW(k.y1 - 3));
+    const tickTop = headW >= sw * 0.5 && headW > tailW, tickBot = tailW >= sw * 0.5 && tailW > headW;
+    if (!tickTop && !tickBot) continue;
+    // 先の形：横線と反対の端の近く（約0.25マス）の、行ごとの幅
+    const span = Math.max(6, Math.round(boxH * 0.25)), ws = [];
+    for (let j = 0; j < span; j++) ws.push(rowW(tickTop ? k.y1 - 1 - j : k.y0 + j));  // 先端から線の方へ
+    let peak = 0; ws.forEach((v, j) => { if (v > ws[peak]) peak = j; });
+    const maxW = ws[peak]; if (maxW < 4) continue;
+    // ○は先端から少し入った所でいちばん太く、そのあと細くなる。矢印は先端（とがった所）から線の方へ広がって、根元で急に細くなる
+    // ○：いちばん太い所を過ぎたあと、だんだん細くなる行がいくつも続く。矢印：太い所から線の太さまで一気に細くなる
+    const lineW = Math.min(...ws.filter(v => v > 0)), taper = ws.slice(peak + 1).filter(v => v > lineW + 2 && v < maxW * 0.95).length;
+    const kind = taper >= 3 ? "circle" : "arrow";
+    const yAbs = (tickTop ? k.y0 : k.y1 - 1) + yTop;
+    // 横線の高さが入るマス（はじまりは下のマス、おわりは上のマス）
+    let r = col.boxes.findIndex(b => tickTop ? yAbs < b.y1 - boxH * 0.3 : yAbs <= b.y1 + boxH * 0.3);
+    if (r < 0) r = tickTop ? col.boxes.length - 1 : col.boxes.length - 1;
+    out.push({ kind, role: tickTop ? "start" : "end", r, y: yAbs });
+  }
+  return out;
 }
 function sampleBox(img, b) {
   // マスの中心に、短い辺の長さの正方形をとって CELL x CELL にする
@@ -570,7 +606,16 @@ function readBook(rgba, w, h, maxSide) {
       res.c = c; res.r = r; cells.push(res);
     }
   });
-  return { ok: true, cells, cols: cols.length, rows, scale: img.s,
+  // 矢印の「から」と次の「まで」を組にする（読む順。○は歌の印なので音には使わない）
+  const repeats = []; let open = null;
+  cols.forEach((col, c) => col.marks.filter(m => m.kind === "arrow").sort((x, y) => x.r - y.r || (x.role === "start" ? -1 : 1)).forEach(m => {
+    const idx = c * rows + m.r;
+    if (m.role === "start") open = idx; else if (open != null && idx >= open) { repeats.push({ from: open, to: idx }); open = null; }
+  }));
+  const sung = []; let so = null;
+  cols.forEach((col, c) => col.marks.filter(m => m.kind === "circle").forEach(m => {
+    const idx = c * rows + m.r; if (m.role === "start") so = idx; else if (so != null) { sung.push({ from: so, to: idx }); so = null; } }));
+  return { ok: true, cells, cols: cols.length, rows, scale: img.s, repeats, sung,
     grid: cols.map(c => c.boxes.map(b => [b.x0 / img.s, b.y0 / img.s, b.x1 / img.s, b.y1 / img.s])) };
 }
 /* 写真1枚を読む：まず専用の用紙（四隅の目印）、なければ本のマス目として読む */
@@ -620,11 +665,20 @@ function parseScoreText(text) {
   if (m) out.seconds = (m[1] ? kanjiNum(m[1]) * 60 : 0) + kanjiNum(m[2]);
   return out;
 }
-function toNotes(boxes, tuning) {
-  const sh = (TUNINGS[tuning] || TUNINGS.honchoshi).shift;
+/* 弾く順：矢印から矢印まで行ったら、はじめの矢印に1回だけ戻ってくり返し、そのあと先へ進む */
+function playOrder(boxes, repeats) {
   let last = -1; boxes.forEach((b, i) => { if (b.kind !== "empty") last = i; });
-  const notes = [];
+  const order = [], done = new Set();
   for (let i = 0; i <= last; i++) {
+    order.push(i);
+    const rp = (repeats || []).find(r => Math.min(r.to, last) === i && r.from <= i && !done.has(r));
+    if (rp) { done.add(rp); i = rp.from - 1; }
+  }
+  return order;
+}
+function toNotes(boxes, tuning, repeats) {
+  const sh = (TUNINGS[tuning] || TUNINGS.honchoshi).shift, notes = [];
+  for (const i of playOrder(boxes, repeats)) {
     const b = boxes[i];
     if (b.kind === "empty") {
       if (notes.length) notes[notes.length - 1].beats += 1; else notes.push({ pitch: 0, beats: 1, box: i, part: 0 });
@@ -637,6 +691,6 @@ function toNotes(boxes, tuning) {
   return notes;
 }
 
-root.KKS_ENGINE = { TUNINGS, parseScoreText, kanjiNum, findBookGrid, sampleBox, readBook, readAny, SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
+root.KKS_ENGINE = { playOrder, TUNINGS, parseScoreText, kanjiNum, findBookGrid, sampleBox, readBook, readAny, SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
   sampleCell, inner, inkMask, normalize, loadNet, classify, readCell, readSheet, toNotes, KKS };
 })(typeof window !== "undefined" ? window : globalThis);

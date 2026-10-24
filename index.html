@@ -83,6 +83,11 @@ button, .btn { font: inherit; cursor: pointer; }
 .tuning select { font: inherit; font-size: 0.95rem; color: var(--sumi); background: #fff; border: 1.5px solid var(--keisen); border-radius: 8px; padding: 6px 28px 6px 10px; min-height: 40px; color-scheme: light; }
 .tuning select:focus-visible { outline: 3px solid var(--kiiro); outline-offset: 2px; }
 .tuning span { font-size: 0.78rem; }
+.tuning input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--sumi); margin: 0; }
+#repText { font-size: 0.85rem; color: var(--sumi); }
+.box.rep-from::before, .box.rep-to::before { position: absolute; left: 3px; top: 1px; font-family: var(--font-ui); font-size: 0.7rem; color: var(--beni); font-weight: 700; }
+.box.rep-from::before { content: "↓"; }
+.box.rep-to::before { content: "↑"; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.78rem; color: var(--usu); margin: 10px 2px 0; }
 .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--beni); margin-right: 5px; transform: translateY(-1px); }
 .legend i.g { background: #3f8f5a; }
@@ -119,6 +124,7 @@ dialog p { margin: 0 0 12px; font-size: 0.85rem; color: var(--usu); }
 footer { font-size: 0.8rem; color: var(--on-ai-dim); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
 footer a { color: var(--on-ai-dim); }
 .photo { display: none; width: 100%; border-radius: 6px; }
+[hidden] { display: none !important; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (prefers-reduced-motion: no-preference) { .box .p, .box { transition: background-color .08s; } }
 </style>
@@ -161,13 +167,14 @@ footer a { color: var(--on-ai-dim); }
       </select>
       <span id="tuningNote"></span>
     </label>
+    <label class="tuning" id="repWrap" hidden><input type="checkbox" id="repOn" checked> <span id="repText">矢印の間をくり返す</span></label>
     <label class="tuning">通して弾く回数
       <select id="times">
         <option value="1">1回</option>
         <option value="2">2回</option>
         <option value="3">3回</option>
       </select>
-      <span>前奏（三線だけの部分）も入れて、最初からくり返します</span>
+      <span>曲の最初から最後までを、何回続けて弾くか</span>
     </label>
     <div class="score" id="score"></div>
     <p class="empty-note" id="emptyNote">まだ何も読んでいません。工工四のPDFや写真を入れるか、「見本の写真で試す」を押してください。マスをタップすると字を入れたり直したりできます。</p>
@@ -181,7 +188,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.3.2</span>
+    <span>合＝ド で鳴らします　試作版 0.4.0</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -653,7 +660,9 @@ function findBookGrid(g, w, h) {
       const n = Math.max(1, Math.round(gh / med)); // 線が消えて2マスつながって見えるとき
       for (let j = 0; j < n; j++) boxes.push({ x0: A.x, x1: B.x, y0: ys[k - 1] + gh * j / n, y1: ys[k - 1] + gh * (j + 1) / n });
     }
-    if (boxes.length >= 4) cols.push({ x: (A.x + B.x) / 2, boxes });
+    // 右どなりの細い欄（歌詞の欄）。くり返しの矢印や声出しの○がここに書かれる
+    const C = vlines[i + 2], strip = C && C.x - B.x < bw * 1.6 ? { x0: Math.round(B.xe + 3), x1: Math.round(C.xs - 3) } : null;
+    if (boxes.length >= 4) cols.push({ x: (A.x + B.x) / 2, boxes, strip });
   }
   cols.sort((a, b) => b.x - a.x);  // 右から読む
   // 線がかすれて見つからなかったマスは、いちばん近い「全部そろった列」の高さに合わせて補う
@@ -668,7 +677,41 @@ function findBookGrid(g, w, h) {
       return own || { x0, x1, y0: rb.y0, y1: rb.y1, guessed: true };
     });
   }
+  for (const col of cols) col.marks = col.strip ? findStripMarks(dark, w, h, col) : [];
   return cols;
+}
+/* 歌詞の欄の印を探す：短い横線（はじまり・おわりの位置）から縦線がのび、先に矢印か○が付いている形。
+   横線が上にあれば「ここから」、下にあれば「ここまで」。矢印はくり返し、○は声出し（歌う所） */
+function findStripMarks(dark, w, h, col) {
+  const { x0, x1 } = col.strip, sw = x1 - x0; if (sw < 4) return [];
+  const yTop = Math.max(0, Math.floor(col.boxes[0].y0) - 4), yBot = Math.min(h, Math.ceil(col.boxes[col.boxes.length - 1].y1) + 12);
+  const W = sw, H = yBot - yTop, m = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) m[y * W + x] = dark[(y + yTop) * w + x + x0];
+  const boxH = (col.boxes[col.boxes.length - 1].y1 - col.boxes[0].y0) / col.boxes.length;
+  const out = [];
+  for (const k of label(m, W, H, 8)) {
+    const kh = k.y1 - k.y0; if (kh < boxH * 0.4 || kh > boxH * 4) continue;
+    // 横線がどちらの端にあるか：端の数行の横の広がり
+    const rowW = y => { let a = W, b = -1; for (let x = 0; x < W; x++) if (m[y * W + x]) { if (x < a) a = x; b = x; } return b < 0 ? 0 : b - a + 1; };
+    const headW = Math.max(rowW(k.y0), rowW(k.y0 + 1), rowW(k.y0 + 2)), tailW = Math.max(rowW(k.y1 - 1), rowW(k.y1 - 2), rowW(k.y1 - 3));
+    const tickTop = headW >= sw * 0.5 && headW > tailW, tickBot = tailW >= sw * 0.5 && tailW > headW;
+    if (!tickTop && !tickBot) continue;
+    // 先の形：横線と反対の端の近く（約0.25マス）の、行ごとの幅
+    const span = Math.max(6, Math.round(boxH * 0.25)), ws = [];
+    for (let j = 0; j < span; j++) ws.push(rowW(tickTop ? k.y1 - 1 - j : k.y0 + j));  // 先端から線の方へ
+    let peak = 0; ws.forEach((v, j) => { if (v > ws[peak]) peak = j; });
+    const maxW = ws[peak]; if (maxW < 4) continue;
+    // ○は先端から少し入った所でいちばん太く、そのあと細くなる。矢印は先端（とがった所）から線の方へ広がって、根元で急に細くなる
+    // ○：いちばん太い所を過ぎたあと、だんだん細くなる行がいくつも続く。矢印：太い所から線の太さまで一気に細くなる
+    const lineW = Math.min(...ws.filter(v => v > 0)), taper = ws.slice(peak + 1).filter(v => v > lineW + 2 && v < maxW * 0.95).length;
+    const kind = taper >= 3 ? "circle" : "arrow";
+    const yAbs = (tickTop ? k.y0 : k.y1 - 1) + yTop;
+    // 横線の高さが入るマス（はじまりは下のマス、おわりは上のマス）
+    let r = col.boxes.findIndex(b => tickTop ? yAbs < b.y1 - boxH * 0.3 : yAbs <= b.y1 + boxH * 0.3);
+    if (r < 0) r = tickTop ? col.boxes.length - 1 : col.boxes.length - 1;
+    out.push({ kind, role: tickTop ? "start" : "end", r, y: yAbs });
+  }
+  return out;
 }
 function sampleBox(img, b) {
   // マスの中心に、短い辺の長さの正方形をとって CELL x CELL にする
@@ -780,7 +823,16 @@ function readBook(rgba, w, h, maxSide) {
       res.c = c; res.r = r; cells.push(res);
     }
   });
-  return { ok: true, cells, cols: cols.length, rows, scale: img.s,
+  // 矢印の「から」と次の「まで」を組にする（読む順。○は歌の印なので音には使わない）
+  const repeats = []; let open = null;
+  cols.forEach((col, c) => col.marks.filter(m => m.kind === "arrow").sort((x, y) => x.r - y.r || (x.role === "start" ? -1 : 1)).forEach(m => {
+    const idx = c * rows + m.r;
+    if (m.role === "start") open = idx; else if (open != null && idx >= open) { repeats.push({ from: open, to: idx }); open = null; }
+  }));
+  const sung = []; let so = null;
+  cols.forEach((col, c) => col.marks.filter(m => m.kind === "circle").forEach(m => {
+    const idx = c * rows + m.r; if (m.role === "start") so = idx; else if (so != null) { sung.push({ from: so, to: idx }); so = null; } }));
+  return { ok: true, cells, cols: cols.length, rows, scale: img.s, repeats, sung,
     grid: cols.map(c => c.boxes.map(b => [b.x0 / img.s, b.y0 / img.s, b.x1 / img.s, b.y1 / img.s])) };
 }
 /* 写真1枚を読む：まず専用の用紙（四隅の目印）、なければ本のマス目として読む */
@@ -830,11 +882,20 @@ function parseScoreText(text) {
   if (m) out.seconds = (m[1] ? kanjiNum(m[1]) * 60 : 0) + kanjiNum(m[2]);
   return out;
 }
-function toNotes(boxes, tuning) {
-  const sh = (TUNINGS[tuning] || TUNINGS.honchoshi).shift;
+/* 弾く順：矢印から矢印まで行ったら、はじめの矢印に1回だけ戻ってくり返し、そのあと先へ進む */
+function playOrder(boxes, repeats) {
   let last = -1; boxes.forEach((b, i) => { if (b.kind !== "empty") last = i; });
-  const notes = [];
+  const order = [], done = new Set();
   for (let i = 0; i <= last; i++) {
+    order.push(i);
+    const rp = (repeats || []).find(r => Math.min(r.to, last) === i && r.from <= i && !done.has(r));
+    if (rp) { done.add(rp); i = rp.from - 1; }
+  }
+  return order;
+}
+function toNotes(boxes, tuning, repeats) {
+  const sh = (TUNINGS[tuning] || TUNINGS.honchoshi).shift, notes = [];
+  for (const i of playOrder(boxes, repeats)) {
     const b = boxes[i];
     if (b.kind === "empty") {
       if (notes.length) notes[notes.length - 1].beats += 1; else notes.push({ pitch: 0, beats: 1, box: i, part: 0 });
@@ -847,7 +908,7 @@ function toNotes(boxes, tuning) {
   return notes;
 }
 
-root.KKS_ENGINE = { TUNINGS, parseScoreText, kanjiNum, findBookGrid, sampleBox, readBook, readAny, SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
+root.KKS_ENGINE = { playOrder, TUNINGS, parseScoreText, kanjiNum, findBookGrid, sampleBox, readBook, readAny, SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
   sampleCell, inner, inkMask, normalize, loadNet, classify, readCell, readSheet, toNotes, KKS };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
@@ -862,7 +923,8 @@ const PITCH_NAMES = ["ド","ド♯","レ","ミ♭","ミ","ファ","ファ♯","�
 function noteName(ch) { const sh = (E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).shift; return PITCH_NAMES[(E.KKS[ch] + (sh[ch] || 0)) % 12]; }
 let layout = { kind: "sheet", cols: S.cols, rows: S.rows };
 let boxes = blank(); // 読む順（右の列から、上から下へ）
-let unsureSet = new Set(), fixedSet = new Set();
+let unsureSet = new Set(), fixedSet = new Set(), repeats = [];
+const activeRepeats = () => $("repOn").checked ? repeats : [];
 
 function blank() { return Array.from({ length: layout.cols * layout.rows }, () => ({ kind: "empty", parts: [] })); }
 function setStatus(t, err) { const s = $("status"); s.textContent = t; s.classList.toggle("err", !!err); }
@@ -885,6 +947,8 @@ function render() {
         else { el.classList.add("multi"); el.innerHTML = b.parts.map((p, j) => `<span class="p half${b.small && j === 1 ? " grace" : ""}">${p.label}</span>`).join(""); }
       }
       if (unsureSet.has(i)) el.classList.add("unsure");
+      if (repeats.some(r => r.from === i)) el.classList.add("rep-from");
+      if (repeats.some(r => r.to === i)) el.classList.add("rep-to");
       if (fixedSet.has(i)) el.classList.add("fixed");
       el.setAttribute("aria-label", `${c + 1}列目 ${r + 1}マス目：${b.kind === "empty" ? "空き" : b.parts.map(p => p.label === "〇" ? "休み" : p.label).join("と")}`);
       el.addEventListener("click", () => openPicker(i));
@@ -895,7 +959,7 @@ function render() {
   const any = last >= 0;
   $("emptyNote").hidden = any; $("legend").hidden = !any;
   $("play").disabled = !any;
-  const notes = E.toNotes(boxes, $("tuning").value), beats = notes.reduce((a, n) => a + n.beats, 0);
+  const notes = E.toNotes(boxes, $("tuning").value, activeRepeats()), beats = notes.reduce((a, n) => a + n.beats, 0);
   $("scoreInfo").textContent = any ? `${beats}拍・右の列から、上から下へ` : "右の列から、上から下へ";
 }
 
@@ -1006,12 +1070,17 @@ async function readPdf(file) {
 /* 読んだ結果（ページごと）をつなげて楽譜にする */
 function show(results, info, ms) {
   const rows = Math.max(...results.map(r => r.rows)), cells = [];
-  let cols = 0;
+  let cols = 0; repeats = [];
   for (const res of results) {
+    const toG = i => (cols + Math.floor(i / res.rows)) * rows + i % res.rows;
+    (res.repeats || []).forEach(rp => repeats.push({ from: toG(rp.from), to: toG(rp.to) }));
     for (let c = 0; c < res.cols; c++) for (let r = 0; r < rows; r++)
       cells.push(r < res.rows ? res.cells[c * res.rows + r] : { kind: "empty", parts: [] });
     cols += res.cols;
   }
+  const where = i => `${Math.floor(i / rows) + 1}列目${i % rows + 1}マス`;
+  $("repWrap").hidden = !repeats.length;
+  if (repeats.length) $("repText").textContent = "矢印の間をくり返す（" + repeats.map(r => `${where(r.from)}〜${where(r.to)}`).join("、") + "）";
   layout = { kind: results.length === 1 && results[0].kind === "sheet" ? "sheet" : "book", cols, rows };
   boxes = cells.map(c => ({ kind: c.kind, small: !!c.small, parts: c.parts.map(p => ({ label: p.label, conf: p.conf })) }));
   unsureSet = new Set(); fixedSet = new Set();
@@ -1021,15 +1090,17 @@ function show(results, info, ms) {
   else $("scoreTitle").textContent = "読み取った工工四";
   if (info.tuning) { $("tuning").value = info.tuning; $("tuningNote").textContent = "楽譜の表記から選びました"; said.push(`調弦は${E.TUNINGS[info.tuning].name}`); }
   else $("tuningNote").textContent = layout.kind === "book" ? "楽譜の表記（「二揚」など）を見て選んでください" : "";
-  const beats = E.toNotes(boxes, $("tuning").value).reduce((a, n) => a + n.beats, 0);
-  if (info.seconds && beats) {
-    const bpm = Math.max(40, Math.min(200, Math.round(beats * 60 / info.seconds)));
+  const beats = E.toNotes(boxes, $("tuning").value, activeRepeats()).reduce((a, n) => a + n.beats, 0);
+  const written = E.toNotes(boxes, $("tuning").value, []).reduce((a, n) => a + n.beats, 0);
+  if (info.seconds && written) {
+    const bpm = Math.max(40, Math.min(200, Math.round((info.beats || written) * 60 / info.seconds)));
     $("tempo").value = bpm; $("tempoVal").textContent = bpm; said.push(`速さは楽譜の所要時間（${info.seconds}秒）に合わせて1分に${bpm}拍`);
   } else { $("tempo").value = 100; $("tempoVal").textContent = 100; }
   render();
-  let msg = `${beats}拍読みました（${(ms / 1000).toFixed(1)}秒）。`;
-  if (info.beats && info.beats !== beats) msg += `楽譜には${info.beats}拍とあるので、どこかが違うかもしれません。`;
+  let msg = `${written}拍読みました（${(ms / 1000).toFixed(1)}秒）。`;
+  if (info.beats && info.beats !== written) msg += `楽譜には${info.beats}拍とあるので、どこかが違うかもしれません。`;
   else if (info.beats) msg += `楽譜に書いてある${info.beats}拍と合っています。`;
+  if (repeats.length) msg += `矢印の間をくり返して、全部で${beats}拍弾きます。`;
   if (said.length) msg += said.join("、") + "にしました。";
   const u = unsureSet.size;
   msg += u ? `赤い点の${u}マスは読みに自信がありません。違っていたらタップして直してください。` : "▶で弾けます。";
@@ -1045,6 +1116,7 @@ $("sample").addEventListener("click", async () => {
 });
 $("tuning").addEventListener("change", () => { stop(); $("tuningNote").textContent = ""; render(); });
 $("times").addEventListener("change", () => stop());
+$("repOn").addEventListener("change", () => { stop(); render(); });
 
 /* ---------- 三線の音 ---------- */
 function sanshin(out, s0, f, len, sr, gain) {
@@ -1113,7 +1185,7 @@ function nowPlaying() {
 }
 function play() {
   if (playing) { stop(); return; }
-  const once = E.toNotes(boxes, $("tuning").value); if (!once.length) return;
+  const once = E.toNotes(boxes, $("tuning").value, activeRepeats()); if (!once.length) return;
   const notes = []; for (let k = 0; k < Number($("times").value); k++) notes.push(...once);
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
   const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(notes, sr, beat);

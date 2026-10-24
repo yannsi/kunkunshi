@@ -83,6 +83,11 @@ button, .btn { font: inherit; cursor: pointer; }
 .tuning select { font: inherit; font-size: 0.95rem; color: var(--sumi); background: #fff; border: 1.5px solid var(--keisen); border-radius: 8px; padding: 6px 28px 6px 10px; min-height: 40px; color-scheme: light; }
 .tuning select:focus-visible { outline: 3px solid var(--kiiro); outline-offset: 2px; }
 .tuning span { font-size: 0.78rem; }
+.tuning input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--sumi); margin: 0; }
+#repText { font-size: 0.85rem; color: var(--sumi); }
+.box.rep-from::before, .box.rep-to::before { position: absolute; left: 3px; top: 1px; font-family: var(--font-ui); font-size: 0.7rem; color: var(--beni); font-weight: 700; }
+.box.rep-from::before { content: "↓"; }
+.box.rep-to::before { content: "↑"; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.78rem; color: var(--usu); margin: 10px 2px 0; }
 .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--beni); margin-right: 5px; transform: translateY(-1px); }
 .legend i.g { background: #3f8f5a; }
@@ -119,6 +124,7 @@ dialog p { margin: 0 0 12px; font-size: 0.85rem; color: var(--usu); }
 footer { font-size: 0.8rem; color: var(--on-ai-dim); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
 footer a { color: var(--on-ai-dim); }
 .photo { display: none; width: 100%; border-radius: 6px; }
+[hidden] { display: none !important; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (prefers-reduced-motion: no-preference) { .box .p, .box { transition: background-color .08s; } }
 </style>
@@ -161,13 +167,14 @@ footer a { color: var(--on-ai-dim); }
       </select>
       <span id="tuningNote"></span>
     </label>
+    <label class="tuning" id="repWrap" hidden><input type="checkbox" id="repOn" checked> <span id="repText">矢印の間をくり返す</span></label>
     <label class="tuning">通して弾く回数
       <select id="times">
         <option value="1">1回</option>
         <option value="2">2回</option>
         <option value="3">3回</option>
       </select>
-      <span>前奏（三線だけの部分）も入れて、最初からくり返します</span>
+      <span>曲の最初から最後までを、何回続けて弾くか</span>
     </label>
     <div class="score" id="score"></div>
     <p class="empty-note" id="emptyNote">まだ何も読んでいません。工工四のPDFや写真を入れるか、「見本の写真で試す」を押してください。マスをタップすると字を入れたり直したりできます。</p>
@@ -181,7 +188,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.3.2</span>
+    <span>合＝ド で鳴らします　試作版 0.4.0</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -220,7 +227,8 @@ const PITCH_NAMES = ["ド","ド♯","レ","ミ♭","ミ","ファ","ファ♯","�
 function noteName(ch) { const sh = (E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).shift; return PITCH_NAMES[(E.KKS[ch] + (sh[ch] || 0)) % 12]; }
 let layout = { kind: "sheet", cols: S.cols, rows: S.rows };
 let boxes = blank(); // 読む順（右の列から、上から下へ）
-let unsureSet = new Set(), fixedSet = new Set();
+let unsureSet = new Set(), fixedSet = new Set(), repeats = [];
+const activeRepeats = () => $("repOn").checked ? repeats : [];
 
 function blank() { return Array.from({ length: layout.cols * layout.rows }, () => ({ kind: "empty", parts: [] })); }
 function setStatus(t, err) { const s = $("status"); s.textContent = t; s.classList.toggle("err", !!err); }
@@ -243,6 +251,8 @@ function render() {
         else { el.classList.add("multi"); el.innerHTML = b.parts.map((p, j) => `<span class="p half${b.small && j === 1 ? " grace" : ""}">${p.label}</span>`).join(""); }
       }
       if (unsureSet.has(i)) el.classList.add("unsure");
+      if (repeats.some(r => r.from === i)) el.classList.add("rep-from");
+      if (repeats.some(r => r.to === i)) el.classList.add("rep-to");
       if (fixedSet.has(i)) el.classList.add("fixed");
       el.setAttribute("aria-label", `${c + 1}列目 ${r + 1}マス目：${b.kind === "empty" ? "空き" : b.parts.map(p => p.label === "〇" ? "休み" : p.label).join("と")}`);
       el.addEventListener("click", () => openPicker(i));
@@ -253,7 +263,7 @@ function render() {
   const any = last >= 0;
   $("emptyNote").hidden = any; $("legend").hidden = !any;
   $("play").disabled = !any;
-  const notes = E.toNotes(boxes, $("tuning").value), beats = notes.reduce((a, n) => a + n.beats, 0);
+  const notes = E.toNotes(boxes, $("tuning").value, activeRepeats()), beats = notes.reduce((a, n) => a + n.beats, 0);
   $("scoreInfo").textContent = any ? `${beats}拍・右の列から、上から下へ` : "右の列から、上から下へ";
 }
 
@@ -364,12 +374,17 @@ async function readPdf(file) {
 /* 読んだ結果（ページごと）をつなげて楽譜にする */
 function show(results, info, ms) {
   const rows = Math.max(...results.map(r => r.rows)), cells = [];
-  let cols = 0;
+  let cols = 0; repeats = [];
   for (const res of results) {
+    const toG = i => (cols + Math.floor(i / res.rows)) * rows + i % res.rows;
+    (res.repeats || []).forEach(rp => repeats.push({ from: toG(rp.from), to: toG(rp.to) }));
     for (let c = 0; c < res.cols; c++) for (let r = 0; r < rows; r++)
       cells.push(r < res.rows ? res.cells[c * res.rows + r] : { kind: "empty", parts: [] });
     cols += res.cols;
   }
+  const where = i => `${Math.floor(i / rows) + 1}列目${i % rows + 1}マス`;
+  $("repWrap").hidden = !repeats.length;
+  if (repeats.length) $("repText").textContent = "矢印の間をくり返す（" + repeats.map(r => `${where(r.from)}〜${where(r.to)}`).join("、") + "）";
   layout = { kind: results.length === 1 && results[0].kind === "sheet" ? "sheet" : "book", cols, rows };
   boxes = cells.map(c => ({ kind: c.kind, small: !!c.small, parts: c.parts.map(p => ({ label: p.label, conf: p.conf })) }));
   unsureSet = new Set(); fixedSet = new Set();
@@ -379,15 +394,17 @@ function show(results, info, ms) {
   else $("scoreTitle").textContent = "読み取った工工四";
   if (info.tuning) { $("tuning").value = info.tuning; $("tuningNote").textContent = "楽譜の表記から選びました"; said.push(`調弦は${E.TUNINGS[info.tuning].name}`); }
   else $("tuningNote").textContent = layout.kind === "book" ? "楽譜の表記（「二揚」など）を見て選んでください" : "";
-  const beats = E.toNotes(boxes, $("tuning").value).reduce((a, n) => a + n.beats, 0);
-  if (info.seconds && beats) {
-    const bpm = Math.max(40, Math.min(200, Math.round(beats * 60 / info.seconds)));
+  const beats = E.toNotes(boxes, $("tuning").value, activeRepeats()).reduce((a, n) => a + n.beats, 0);
+  const written = E.toNotes(boxes, $("tuning").value, []).reduce((a, n) => a + n.beats, 0);
+  if (info.seconds && written) {
+    const bpm = Math.max(40, Math.min(200, Math.round((info.beats || written) * 60 / info.seconds)));
     $("tempo").value = bpm; $("tempoVal").textContent = bpm; said.push(`速さは楽譜の所要時間（${info.seconds}秒）に合わせて1分に${bpm}拍`);
   } else { $("tempo").value = 100; $("tempoVal").textContent = 100; }
   render();
-  let msg = `${beats}拍読みました（${(ms / 1000).toFixed(1)}秒）。`;
-  if (info.beats && info.beats !== beats) msg += `楽譜には${info.beats}拍とあるので、どこかが違うかもしれません。`;
+  let msg = `${written}拍読みました（${(ms / 1000).toFixed(1)}秒）。`;
+  if (info.beats && info.beats !== written) msg += `楽譜には${info.beats}拍とあるので、どこかが違うかもしれません。`;
   else if (info.beats) msg += `楽譜に書いてある${info.beats}拍と合っています。`;
+  if (repeats.length) msg += `矢印の間をくり返して、全部で${beats}拍弾きます。`;
   if (said.length) msg += said.join("、") + "にしました。";
   const u = unsureSet.size;
   msg += u ? `赤い点の${u}マスは読みに自信がありません。違っていたらタップして直してください。` : "▶で弾けます。";
@@ -403,6 +420,7 @@ $("sample").addEventListener("click", async () => {
 });
 $("tuning").addEventListener("change", () => { stop(); $("tuningNote").textContent = ""; render(); });
 $("times").addEventListener("change", () => stop());
+$("repOn").addEventListener("change", () => { stop(); render(); });
 
 /* ---------- 三線の音 ---------- */
 function sanshin(out, s0, f, len, sr, gain) {
@@ -471,7 +489,7 @@ function nowPlaying() {
 }
 function play() {
   if (playing) { stop(); return; }
-  const once = E.toNotes(boxes, $("tuning").value); if (!once.length) return;
+  const once = E.toNotes(boxes, $("tuning").value, activeRepeats()); if (!once.length) return;
   const notes = []; for (let k = 0; k < Number($("times").value); k++) notes.push(...once);
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
   const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(notes, sr, beat);
