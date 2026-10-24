@@ -173,7 +173,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.3.0</span>
+    <span>合＝ド で鳴らします　試作版 0.3.1</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -396,7 +396,8 @@ $("sample").addEventListener("click", async () => {
 $("tuning").addEventListener("change", () => { stop(); $("tuningNote").textContent = ""; render(); });
 
 /* ---------- 三線の音 ---------- */
-function sanshin(out, s0, f, len, sr) {
+function sanshin(out, s0, f, len, sr, gain) {
+  gain = gain == null ? 1 : gain;
   /* カープラス・ストロング法で弦をはじいた音を作る（声のQRと同じ） */
   const N = Math.max(2, Math.round(sr / f)), buf = new Float32Array(N);
   let seed = (s0 % 9973) + 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
@@ -408,7 +409,7 @@ function sanshin(out, s0, f, len, sr) {
     buf[idx] = decay * (0.55 * cur + 0.45 * nxt); idx = (idx + 1) % N;
     const t = i / sr, rel = t > hold ? Math.exp(-(t - hold) * 14) : 1;
     const hp = cur - 0.6 * prev; prev = cur;
-    out[s0 + i] += (0.75 * cur + 0.35 * hp) * rel;
+    out[s0 + i] += (0.75 * cur + 0.35 * hp) * rel * gain;
   }
 }
 /* iPhoneの消音スイッチが入っていても鳴るよう、WAVにして audio 要素で鳴らす（声のQRと同じ）。
@@ -437,7 +438,7 @@ function renderSound(notes, sr, beat) {
   let t = 0; timeline = [];
   for (const n of notes) {
     const len = n.beats * beat;
-    if (n.pitch > 0) sanshin(out, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch - 69) / 12), len, sr);
+    if (n.pitch > 0) sanshin(out, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch - 69) / 12), len, sr, n.soft ? 0.55 : 1);
     timeline.push({ t, end: t + len, box: n.box, part: n.part, beats: n.beats });
     t += len;
   }

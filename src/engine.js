@@ -631,7 +631,8 @@ function toNotes(boxes, tuning) {
       continue;
     }
     const k = b.parts.length, d = 1 / k;
-    b.parts.forEach((p, j) => notes.push({ pitch: p.label === "〇" || !KKS[p.label] ? 0 : KKS[p.label] + (sh[p.label] || 0), beats: d, box: i, part: j }));
+    // 小さく書かれた字（小弾・打音・掛音）は、弱めに鳴らす
+    b.parts.forEach((p, j) => notes.push({ pitch: p.label === "〇" || !KKS[p.label] ? 0 : KKS[p.label] + (sh[p.label] || 0), beats: d, box: i, part: j, soft: !!(b.small && j === 1) }));
   }
   return notes;
 }
