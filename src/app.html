@@ -119,6 +119,27 @@ dialog p { margin: 0 0 12px; font-size: 0.85rem; color: var(--usu); }
 .dlg-foot input { width: 20px; height: 20px; accent-color: var(--sumi); }
 .dlg-foot button { min-height: 44px; padding: 0 20px; border-radius: 10px; border: 0; background: var(--sumi); color: var(--kami); font-weight: 700; }
 
+.chin-open { min-height: 50px; }
+.strings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.string { border: 1.5px solid var(--keisen); border-radius: 12px; background: #fff; padding: 10px 6px; display: grid; gap: 2px; justify-items: center; font: inherit; color: var(--sumi); cursor: pointer; }
+.string small { font-size: 0.75rem; color: var(--usu); }
+.string b { font-family: var(--font-fude); font-weight: 600; font-size: 1.6rem; line-height: 1.2; }
+.string span { font-size: 0.85rem; }
+.string.near { border-color: var(--sumi); }
+.string.ok { background: var(--kiiro); border-color: var(--kiiro); }
+.string:focus-visible, .mic:focus-visible { outline: 3px solid var(--kiiro); outline-offset: 2px; }
+.meter { margin-top: 14px; display: grid; gap: 6px; }
+.meter-note { display: flex; align-items: baseline; gap: 10px; }
+.meter-note b { font-size: 1.3rem; }
+.meter-note span { font-size: 0.9rem; color: var(--usu); }
+.meter-bar { position: relative; height: 18px; border-radius: 9px; background: linear-gradient(90deg, #f3d6d4, #fbfaf6 42%, #fbfaf6 58%, #f3d6d4); border: 1px solid var(--keisen); }
+.meter-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--sumi); transform: translateX(-1px); }
+.meter-needle { position: absolute; top: -5px; bottom: -5px; width: 6px; border-radius: 3px; background: var(--beni); left: 50%; transform: translateX(-3px); }
+.meter-needle.ok { background: #2f8a4c; }
+.meter-scale { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--usu); }
+.chin-err { min-height: 1em; margin: 8px 0 0; font-size: 0.85rem; color: var(--beni); }
+.dlg-foot .mic { background: var(--kiiro); color: var(--sumi); }
+@media (prefers-reduced-motion: no-preference) { .meter-needle { transition: left .12s linear; } }
 .how { color: var(--on-ai-dim); font-size: 0.88rem; margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
 .how b { color: var(--on-ai); }
 footer { font-size: 0.8rem; color: var(--on-ai-dim); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
@@ -167,6 +188,17 @@ footer a { color: var(--on-ai-dim); }
       </select>
       <span id="tuningNote"></span>
     </label>
+    <label class="tuning">全体の高さ（合の音）
+      <select id="base">
+        <option value="-3">ラ</option>
+        <option value="-2">シ♭</option>
+        <option value="-1">シ</option>
+        <option value="0" selected>ド</option>
+        <option value="1">ド♯</option>
+        <option value="2">レ</option>
+      </select>
+      <span>歌う人の声に合わせて上げ下げします</span>
+    </label>
     <label class="tuning" id="repWrap" hidden><input type="checkbox" id="repOn" checked> <span id="repText">矢印の間をくり返す</span></label>
     <label class="tuning">通して弾く回数
       <select id="times">
@@ -181,6 +213,8 @@ footer a { color: var(--on-ai-dim); }
     <div class="legend" id="legend" hidden><span><i></i>読みに自信がないマス</span><span><i class="g"></i>手で直したマス</span><span>マスをタップで直せます</span></div>
   </section>
 
+  <button class="btn chin-open" type="button" id="chinOpen">ちんだみ（三線の調弦）を合わせる</button>
+
   <ul class="how">
     <li><b>工工四のPDF</b>：ダウンロードしたPDFを「写真・PDFを選ぶ」から入れます。いちばん確実です。曲名・調弦・速さも、楽譜に書いてあれば合わせます。</li>
     <li><b>本や楽譜の写真</b>：マス目が全部入るように、正面からまっすぐ撮ります。調弦は楽譜の表記（「二揚」など）を見て選んでください。</li>
@@ -188,7 +222,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.4.0</span>
+    <span>合＝ド で鳴らします　試作版 0.5.0</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -204,6 +238,22 @@ footer a { color: var(--on-ai-dim); }
     </label>
   </div>
 </div>
+
+<dialog id="chin" aria-labelledby="chinTitle">
+  <h3 id="chinTitle">ちんだみ</h3>
+  <p id="chinSub">弦を押さえずに鳴らして、3本の弦をこの高さに合わせます。</p>
+  <div class="strings" id="strings"></div>
+  <div class="meter" id="meter" hidden>
+    <div class="meter-note"><b id="mNote">―</b><span id="mWord">弦を1本ずつ鳴らしてください</span></div>
+    <div class="meter-bar" aria-hidden="true"><i class="meter-mid"></i><i class="meter-needle" id="mNeedle"></i></div>
+    <div class="meter-scale" aria-hidden="true"><span>低い</span><span>ちょうど</span><span>高い</span></div>
+  </div>
+  <p class="chin-err" id="chinErr" role="status" aria-live="polite"></p>
+  <div class="dlg-foot">
+    <button type="button" class="mic" id="micBtn">マイクで合わせる</button>
+    <button type="button" id="chinClose">閉じる</button>
+  </div>
+</dialog>
 
 <dialog id="dlg" aria-labelledby="dlgTitle">
   <h3 id="dlgTitle">このマスの字</h3>
@@ -420,20 +470,24 @@ $("sample").addEventListener("click", async () => {
 });
 $("tuning").addEventListener("change", () => { stop(); $("tuningNote").textContent = ""; render(); });
 $("times").addEventListener("change", () => stop());
+$("base").addEventListener("change", () => { stop(); if ($("chin").open) buildStrings(); });
 $("repOn").addEventListener("change", () => { stop(); render(); });
 
 /* ---------- 三線の音 ---------- */
 function sanshin(out, s0, f, len, sr, gain) {
+  /* カープラス・ストロング法で弦をはじいた音を作る（声のQRと同じ音色）。
+     ちんだみの見本にも使うので、端数の遅れ（オールパス）を入れて、高さを正確にする */
   gain = gain == null ? 1 : gain;
-  /* カープラス・ストロング法で弦をはじいた音を作る（声のQRと同じ） */
-  const N = Math.max(2, Math.round(sr / f)), buf = new Float32Array(N);
+  const P = sr / f, N = Math.max(2, Math.floor(P + 0.35)), D = P + 0.45 - N, C = (1 - D) / (1 + D); // 前後の平均で遅れが0.45短くなる分を足す
+  const buf = new Float32Array(N);
   let seed = (s0 % 9973) + 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
   for (let i = 0; i < N; i++) buf[i] = 0.6 * rnd() + 0.4 * (1 - 2 * i / N);
   const hold = len + 0.15, n = Math.min(out.length - s0, Math.floor((hold + 0.35) * sr));
-  let idx = 0, prev = 0; const decay = 0.9965;
+  let idx = 0, prev = 0, ax = 0, ay = 0; const decay = 0.9965;
   for (let i = 0; i < n; i++) {
     const cur = buf[idx], nxt = buf[(idx + 1) % N];
-    buf[idx] = decay * (0.55 * cur + 0.45 * nxt); idx = (idx + 1) % N;
+    const lp = decay * (0.55 * cur + 0.45 * nxt), ap = C * lp + ax - C * ay; ax = lp; ay = ap;
+    buf[idx] = ap; idx = (idx + 1) % N;
     const t = i / sr, rel = t > hold ? Math.exp(-(t - hold) * 14) : 1;
     const hp = cur - 0.6 * prev; prev = cur;
     out[s0 + i] += (0.75 * cur + 0.35 * hp) * rel * gain;
@@ -465,7 +519,7 @@ function renderSound(notes, sr, beat) {
   let t = 0; timeline = [];
   for (const n of notes) {
     const len = n.beats * beat;
-    if (n.pitch > 0) sanshin(out, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch - 69) / 12), len, sr, n.soft ? 0.55 : 1);
+    if (n.pitch > 0) sanshin(out, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch + baseShift() - 69) / 12), len, sr, n.soft ? 0.55 : 1);
     timeline.push({ t, end: t + len, box: n.box, part: n.part, beats: n.beats });
     t += len;
   }
@@ -530,6 +584,105 @@ function play() {
 }
 $("play").addEventListener("click", play);
 $("tempo").addEventListener("input", e => { $("tempoVal").textContent = e.target.value; if (playing) stop(); });
+
+/* ---------- ちんだみ（調弦） ---------- */
+const baseShift = () => Number($("base").value);
+const NOTE12 = ["ド","ド♯","レ","ミ♭","ミ","ファ","ファ♯","ソ","ソ♯","ラ","シ♭","シ"];
+/* 3本の弦を押さえないときの音（本調子で 男弦＝ド3・中弦＝ファ3・女弦＝ド4）に、調弦と全体の高さを足す */
+function stringsNow() {
+  const sh = (E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).shift, b = baseShift();
+  return [["男弦", "合", 48], ["中弦", "四", 53], ["女弦", "工", 60]].map(([name, ch, m]) => {
+    const midi = m + (sh[ch] || 0) + b; return { name, ch, midi, freq: 440 * Math.pow(2, (midi - 69) / 12), note: NOTE12[((midi % 12) + 12) % 12] };
+  });
+}
+function buildStrings() {
+  const box = $("strings"); box.innerHTML = "";
+  $("chinSub").textContent = `${(E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).name}・合＝${$("base").selectedOptions[0].textContent}。弦を押さえずに鳴らして、3本をこの高さに合わせます。押すと見本の音が鳴ります。`;
+  stringsNow().forEach((st, i) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "string"; b.dataset.i = i;
+    b.innerHTML = `<small>${st.name}</small><b>${st.ch}</b><span>${st.note}</span>`;
+    b.setAttribute("aria-label", `${st.name}（${st.ch}）${st.note}の見本を鳴らす`);
+    b.addEventListener("click", () => playTone(st)); box.appendChild(b);
+  });
+}
+function playTone(st) {
+  stop();
+  const sr = 44100, out = new Float32Array(Math.ceil(3.2 * sr));
+  for (let k = 0; k < 3; k++) sanshin(out, Math.floor(k * 1.0 * sr), st.freq, 0.9, sr, 1);
+  let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
+  for (let i = 0; i < out.length; i++) out[i] *= 0.8 / pk;
+  try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+  if (!audioEl) { audioEl = new Audio(); audioEl.preload = "auto"; audioEl.setAttribute("playsinline", ""); }
+  if (lastUrl) URL.revokeObjectURL(lastUrl);
+  lastUrl = URL.createObjectURL(wavBlob(out, sr)); audioEl.src = lastUrl; audioEl.onended = null;
+  const pr = audioEl.play(); if (pr && pr.catch) pr.catch(() => playWeb(out, sr));
+}
+/* マイクの音の高さ（YINという方法で、波形が何サンプルごとにくり返すかを探す） */
+function detectPitch(buf, sr) {
+  let rms = 0; for (const v of buf) rms += v * v; rms = Math.sqrt(rms / buf.length);
+  if (rms < 0.008) return 0;
+  const minT = Math.floor(sr / 700), maxT = Math.min(Math.floor(sr / 90), buf.length >> 1), W = buf.length - maxT;
+  const cm = new Float32Array(maxT + 2); cm[0] = 1; let run = 0;
+  for (let t = 1; t <= maxT; t++) {
+    let s = 0; for (let i = 0; i < W; i++) { const x = buf[i] - buf[i + t]; s += x * x; }
+    run += s; cm[t] = run ? s * t / run : 1;
+  }
+  let t = minT; while (t <= maxT && cm[t] >= 0.12) t++;
+  if (t > maxT) return 0;
+  while (t + 1 <= maxT && cm[t + 1] < cm[t]) t++;
+  const a = cm[t - 1], b = cm[t], c = t + 1 <= maxT ? cm[t + 1] : b, den = a - 2 * b + c;
+  const sh = den ? (a - c) / (2 * den) : 0;
+  return sr / (t + (Math.abs(sh) < 1 ? sh : 0));
+}
+let mic = null;
+async function startMic() {
+  $("chinErr").textContent = "";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") await ac.resume();
+    const an = ac.createAnalyser(); an.fftSize = 2048; ac.createMediaStreamSource(stream).connect(an);
+    mic = { stream, ac, an, buf: new Float32Array(an.fftSize), hist: [], raf: 0 };
+    $("meter").hidden = false; $("micBtn").textContent = "マイクを止める";
+    let tick = 0;
+    const loop = () => {
+      if (!mic) return;
+      mic.raf = requestAnimationFrame(loop);
+      if (tick++ % 3) return;   // 1秒に20回ほど調べれば十分
+      mic.an.getFloatTimeDomainData(mic.buf);
+      const f = detectPitch(mic.buf, mic.ac.sampleRate);
+      if (f > 0) { mic.hist.push(f); if (mic.hist.length > 5) mic.hist.shift(); } else if (mic.hist.length) mic.hist.shift();
+      showPitch(mic.hist.length >= 3 ? mic.hist.slice().sort((a, b) => a - b)[mic.hist.length >> 1] : 0);
+    };
+    loop();
+  } catch (e) {
+    $("chinErr").textContent = "マイクが使えませんでした。ブラウザの設定で、このページにマイクの使用を許可してください。音はこの端末の中だけで調べ、どこにも送りません。";
+    stopMic();
+  }
+}
+function stopMic() {
+  if (mic) { cancelAnimationFrame(mic.raf); mic.stream.getTracks().forEach(t => t.stop()); mic.ac.close(); mic = null; }
+  $("meter").hidden = true; $("micBtn").textContent = "マイクで合わせる";
+  document.querySelectorAll(".string").forEach(el => el.classList.remove("near", "ok"));
+}
+function showPitch(f) {
+  const els = document.querySelectorAll(".string");
+  els.forEach(el => el.classList.remove("near", "ok"));
+  if (!f) { $("mNote").textContent = "―"; $("mWord").textContent = "弦を1本ずつ鳴らしてください"; $("mNeedle").style.left = "50%"; $("mNeedle").classList.remove("ok"); return; }
+  const sts = stringsNow();
+  let k = 0; sts.forEach((st, i) => { if (Math.abs(Math.log2(f / st.freq)) < Math.abs(Math.log2(f / sts[k].freq))) k = i; });
+  const cents = Math.round(1200 * Math.log2(f / sts[k].freq)), ok = Math.abs(cents) <= 5;
+  els[k].classList.add(ok ? "ok" : "near");
+  $("mNote").textContent = `${sts[k].name}（${sts[k].ch}）`;
+  $("mWord").textContent = ok ? "ちょうどです" : Math.abs(cents) > 60 ? (cents < 0 ? "かなり低い。糸巻きを締めて上げます" : "かなり高い。糸巻きをゆるめて下げます")
+    : (cents < 0 ? `少し低い（${cents}）。少し締めます` : `少し高い（+${cents}）。少しゆるめます`);
+  $("mNeedle").style.left = `${50 + Math.max(-50, Math.min(50, cents))}%`;
+  $("mNeedle").classList.toggle("ok", ok);
+}
+$("chinOpen").addEventListener("click", () => { stop(); buildStrings(); $("chin").showModal(); });
+$("chinClose").addEventListener("click", () => $("chin").close());
+$("chin").addEventListener("close", () => { stopMic(); stop(); });
+$("chin").addEventListener("click", e => { if (e.target === $("chin")) $("chin").close(); });
+$("micBtn").addEventListener("click", () => mic ? stopMic() : startMic());
 
 buildPicks(); render();
 if ("serviceWorker" in navigator) {
