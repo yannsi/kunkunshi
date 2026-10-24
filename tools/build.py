@@ -9,7 +9,8 @@ you = rd("src/youshi.html").replace("/*ENGINE*/", engine).replace("/*SHEETJS*/",
 open(os.path.join(R, "index.html"), "w", encoding="utf-8").write(app)
 open(os.path.join(R, "youshi.html"), "w", encoding="utf-8").write(you)
 files = ["./", "index.html", "youshi.html", "youshi.pdf", "sample.jpg", "manifest.webmanifest",
-         "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png"]
+         "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
+         "vendor/pdfjs/pdf.min.mjs", "vendor/pdfjs/pdf.worker.min.mjs"]
 h = hashlib.sha1()
 for f in files[1:]:
     p = os.path.join(R, f)

@@ -321,6 +321,25 @@ function readCell(cell) {
 }
 
 /* ---------- 写真全体を読む ---------- */
+/* 見つけた4点が本当に用紙の目印か確かめる：中は黒く、まわりは白く、左上だけ中心が白い */
+function verifySheet(img, H) {
+  const { g, w, h } = img;
+  const at = (x, y) => { const [u, v] = project(H, x, y); const xi = Math.round(u), yi = Math.round(v);
+    return xi < 0 || yi < 0 || xi >= w || yi >= h ? null : g[yi * w + xi]; };
+  let okAll = true;
+  SHEET.mark.centers.forEach(([cx, cy], i) => {
+    const ring = [], inside = [];
+    for (let k = 0; k < 16; k++) { const a = k / 16 * 2 * Math.PI; ring.push(at(cx + 8 * Math.cos(a), cy + 8 * Math.sin(a))); }
+    for (const dx of [-3.5, 0, 3.5]) for (const dy of [-3.5, 0, 3.5]) { if (i === 0 && dx === 0 && dy === 0) continue; inside.push(at(cx + dx, cy + dy)); }
+    if (ring.concat(inside).some(v => v == null)) { okAll = false; return; }
+    const paper = ring.slice().sort((a, b) => a - b)[8];
+    const darkIn = inside.filter(v => v < paper * 0.6).length / inside.length;
+    const lightRing = ring.filter(v => v > paper * 0.75).length / ring.length;
+    let hole = true; if (i === 0) hole = at(cx, cy) > paper * 0.7;
+    if (darkIn < 0.85 || lightRing < 0.75 || !hole) okAll = false;
+  });
+  return okAll;
+}
 function readSheet(rgba, w, h) {
   const gray = toGray(rgba, w, h);
   const small = downscale(gray, w, h, 1000);
@@ -329,6 +348,7 @@ function readSheet(rgba, w, h) {
   const big = downscale(gray, w, h, 2400);
   const pts = found.pts.map(([x, y]) => [x / small.s * big.s, y / small.s * big.s]);
   const H = homography(SHEET.mark.centers, pts);
+  if (!verifySheet(big, H)) return { ok: false, reason: "marks" };
   const cells = [];
   for (let c = 0; c < SHEET.cols; c++) for (let r = 0; r < SHEET.rows; r++) {
     const res = readCell(sampleCell(big, H, c, r));
@@ -337,11 +357,202 @@ function readSheet(rgba, w, h) {
   return { ok: true, cells, corners: pts.map(([x, y]) => [x / big.s, y / big.s]), H, scale: big.s };
 }
 
+/* ---------- 本・PDFの工工四を読む（目印なし。マス目の線を探す） ---------- */
+function findBookGrid(g, w, h) {
+  // 暗い点：周りの明るさより暗い所（写真の明るさむらに負けないよう、広めの窓で比べる）
+  const win = Math.max(15, Math.round(Math.max(w, h) / 60)) | 1, r = win >> 1;
+  const I = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) { let row = 0;
+    for (let x = 0; x < w; x++) { row += g[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; } }
+  const dark = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) { const ya = Math.max(0, y - r), yb = Math.min(h, y + r + 1);
+    for (let x = 0; x < w; x++) { const xa = Math.max(0, x - r), xb = Math.min(w, x + r + 1);
+      const mean = (I[yb * (w + 1) + xb] - I[ya * (w + 1) + xb] - I[yb * (w + 1) + xa] + I[ya * (w + 1) + xa]) / ((yb - ya) * (xb - xa));
+      dark[y * w + x] = g[y * w + x] < Math.min(mean * 0.93, mean - 0.05) ? 1 : 0; } }  // 写真では細い線が薄くなるので、わずかな暗さも拾う
+  // 縦線：上下に長く続く暗い列（2点までの切れ目は許す）
+  const minRun = h * 0.2, vcols = [];
+  for (let x = 0; x < w; x++) {
+    let best = 0, bs = 0, cur = 0, cs = 0, gap = 0;
+    for (let y = 0; y < h; y++) {
+      const d = dark[y * w + x] || (x > 0 && dark[y * w + x - 1]) || (x < w - 1 && dark[y * w + x + 1]);
+      if (d) { if (cur === 0) cs = y; cur += 1 + gap; gap = 0; if (cur > best) { best = cur; bs = cs; } }
+      else if (cur > 0 && gap < 2) gap++; else { cur = 0; gap = 0; }
+    }
+    if (best >= minRun) vcols.push({ x, y0: bs, y1: bs + best });
+  }
+  const vlines = [];
+  for (const v of vcols) {
+    const L = vlines[vlines.length - 1];
+    if (L && v.x - L.xe <= 2) { L.xe = v.x; L.y0 = Math.min(L.y0, v.y0); L.y1 = Math.max(L.y1, v.y1); L.n++; L.sx += v.x; }
+    else vlines.push({ xs: v.x, xe: v.x, y0: v.y0, y1: v.y1, n: 1, sx: v.x });
+  }
+  vlines.forEach(L => L.x = L.sx / L.n);
+  // となり合う縦線の間に、横線が何本も規則正しく入っていれば、それが音のマスの列
+  const cols = [];
+  for (let i = 0; i + 1 < vlines.length; i++) {
+    const A = vlines[i], B = vlines[i + 1], bw = B.x - A.x;
+    if (bw < w * 0.012 || bw > w * 0.15) continue;
+    const y0 = Math.max(A.y0, B.y0), y1 = Math.min(A.y1, B.y1); if (y1 - y0 < minRun) continue;
+    const xa = Math.round(A.xe + 2), xb = Math.round(B.xs - 2); if (xb - xa < 4) continue;
+    const rows = [];
+    for (let y = Math.max(0, y0 - 3); y <= Math.min(h - 1, y1 + 3); y++) {
+      let n = 0; for (let x = xa; x <= xb; x++) n += dark[y * w + x] || (y > 0 && dark[(y - 1) * w + x]) ? 1 : 0;
+      if (n >= (xb - xa + 1) * 0.85) rows.push(y);
+    }
+    const hl = [];
+    for (const y of rows) { const L = hl[hl.length - 1]; if (L && y - L.e <= 2) { L.e = y; } else hl.push({ s: y, e: y }); }
+    const ys = hl.map(o => (o.s + o.e) / 2);
+    if (ys.length < 5) continue;
+    const gaps = []; for (let k = 1; k < ys.length; k++) gaps.push(ys[k] - ys[k - 1]);
+    const med = gaps.slice().sort((a, b) => a - b)[gaps.length >> 1];
+    if (med < bw * 0.5 || med > bw * 3) continue;
+    const boxes = [];
+    for (let k = 1; k < ys.length; k++) {
+      const gh = ys[k] - ys[k - 1];
+      if (gh < med * 0.6) continue;              // 二重線などの細いすき間
+      const n = Math.max(1, Math.round(gh / med)); // 線が消えて2マスつながって見えるとき
+      for (let j = 0; j < n; j++) boxes.push({ x0: A.x, x1: B.x, y0: ys[k - 1] + gh * j / n, y1: ys[k - 1] + gh * (j + 1) / n });
+    }
+    if (boxes.length >= 4) cols.push({ x: (A.x + B.x) / 2, boxes });
+  }
+  cols.sort((a, b) => b.x - a.x);  // 右から読む
+  // 線がかすれて見つからなかったマスは、いちばん近い「全部そろった列」の高さに合わせて補う
+  const full = Math.max(0, ...cols.map(c => c.boxes.length)), refs = cols.filter(c => c.boxes.length === full);
+  for (const col of cols) {
+    if (col.boxes.length === full) continue;
+    const ref = refs.reduce((a, b) => Math.abs(b.x - col.x) < Math.abs(a.x - col.x) ? b : a);
+    const x0 = col.boxes[0].x0, x1 = col.boxes[0].x1;
+    col.boxes = ref.boxes.map(rb => {
+      const ry = (rb.y0 + rb.y1) / 2, rh = rb.y1 - rb.y0;
+      const own = col.boxes.find(b => Math.abs((b.y0 + b.y1) / 2 - ry) < rh * 0.4);
+      return own || { x0, x1, y0: rb.y0, y1: rb.y1, guessed: true };
+    });
+  }
+  return cols;
+}
+function sampleBox(img, b) {
+  // マスの中心に、短い辺の長さの正方形をとって CELL x CELL にする
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, side = Math.min(b.x1 - b.x0, b.y1 - b.y0);
+  const out = new Float32Array(CELL * CELL), { g, w, h } = img, k = side / CELL;
+  for (let j = 0; j < CELL; j++) for (let i = 0; i < CELL; i++) {
+    const u = cx - side / 2 + (i + 0.5) * k - 0.5, v = cy - side / 2 + (j + 0.5) * k - 0.5;
+    const x = Math.max(0, Math.min(w - 1.001, u)), y = Math.max(0, Math.min(h - 1.001, v));
+    const xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi, p = yi * w + xi;
+    out[j * CELL + i] = g[p] * (1 - fx) * (1 - fy) + g[p + 1] * fx * (1 - fy) + g[p + w] * (1 - fx) * fy + g[p + w + 1] * fx * fy;
+  }
+  return out;
+}
+/* 斜めの写真を直す：縦線がまっすぐ縦にそろう「回転」と「上下のすぼまり（台形）」を探して、その逆をかける */
+function rectifyBook(img) {
+  const sm = downscale(img.g, img.w, img.h, 800), { g, w, h } = sm;
+  const pts = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const v = g[y * w + x], l = g[y * w + x - 1], r = g[y * w + x + 1];
+    if (v < l - 0.04 && v < r - 0.04) pts.push(x, y);   // 左右より暗い＝縦の線の上の点
+  }
+  if (pts.length < 200) return null;
+  const xc = w / 2, yc = h / 2, bins = new Float32Array(w * 3);
+  const score = (th, k) => {
+    bins.fill(0); const c = Math.cos(th), s = Math.sin(th);
+    for (let i = 0; i < pts.length; i += 2) {
+      const dx = pts[i] - xc, dy = pts[i + 1] - yc, xr = c * dx + s * dy, yr = -s * dx + c * dy;
+      const u = xr / (1 + k * yr / h) + w * 1.5; const b = u | 0; if (b >= 0 && b < bins.length) bins[b]++;
+    }
+    let e = 0; for (let i = 0; i < bins.length; i++) e += bins[i] * bins[i]; return e;
+  };
+  let best = { th: 0, k: 0, e: score(0, 0) }; const e0 = best.e;
+  for (let th = -8; th <= 8; th += 0.5) for (let k = -0.2; k <= 0.2001; k += 0.025) {
+    const e = score(th * Math.PI / 180, k); if (e > best.e) best = { th: th * Math.PI / 180, k, e }; }
+  for (const [dt, dk] of [[0.2, 0.01], [0.08, 0.004], [0.03, 0.0015]]) {
+    const b0 = best;
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+      const th = b0.th + a * dt * Math.PI / 180, k = b0.k + b * dk, e = score(th, k); if (e > best.e) best = { th, k, e }; }
+  }
+  if (Math.abs(best.th) < 0.002 && Math.abs(best.k) < 0.003) return null;
+  if (best.e < e0 * 1.05) return null;
+  // 直した画像を作る（元の大きさで）
+  const W = img.w, H = img.h, Xc = W / 2, Yc = H / 2, out = new Float32Array(W * H);
+  const c = Math.cos(best.th), sn = Math.sin(best.th), src = img.g;
+  for (let v = 0; v < H; v++) for (let u = 0; u < W; u++) {
+    const yr = v - Yc, xr = (u - Xc) * (1 + best.k * yr / H);
+    const x = c * xr - sn * yr + Xc, y = sn * xr + c * yr + Yc;
+    if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) { out[v * W + u] = 1; continue; }
+    const xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi, p = yi * W + xi;
+    out[v * W + u] = src[p] * (1 - fx) * (1 - fy) + src[p + 1] * fx * (1 - fy) + src[p + W] * (1 - fx) * fy + src[p + W + 1] * fx * fy;
+  }
+  return { g: out, w: W, h: H, s: img.s, th: best.th, k: best.k };
+}
+function readBook(rgba, w, h) {
+  const gray = toGray(rgba, w, h);
+  let img = downscale(gray, w, h, 2400);
+  let cols = findBookGrid(img.g, img.w, img.h);
+  // 斜めに写っていれば直して探し直し、マスが多く見つかった方を使う
+  const fixed = rectifyBook(img);
+  if (fixed) {
+    const c2 = findBookGrid(fixed.g, fixed.w, fixed.h), n = cs => cs.reduce((a, c) => a + c.boxes.length, 0);
+    if (n(c2) > n(cols)) { img = fixed; cols = c2; }
+  }
+  if (!cols.length) return { ok: false, reason: "grid" };
+  const rows = Math.max(...cols.map(c => c.boxes.length)), cells = [];
+  cols.forEach((col, c) => {
+    for (let r = 0; r < rows; r++) {
+      const b = col.boxes[r];
+      const res = b ? readCell(sampleBox(img, b)) : { kind: "empty", parts: [], ink: 0 };
+      res.c = c; res.r = r; cells.push(res);
+    }
+  });
+  return { ok: true, cells, cols: cols.length, rows, scale: img.s,
+    grid: cols.map(c => c.boxes.map(b => [b.x0 / img.s, b.y0 / img.s, b.x1 / img.s, b.y1 / img.s])) };
+}
+/* 写真1枚を読む：まず専用の用紙（四隅の目印）、なければ本のマス目として読む */
+function readAny(rgba, w, h) {
+  const a = readSheet(rgba, w, h);
+  if (a.ok) { a.kind = "sheet"; a.cols = SHEET.cols; a.rows = SHEET.rows; return a; }
+  const b = readBook(rgba, w, h);
+  if (b.ok) b.kind = "book";
+  return b;
+}
+
 /* ---------- マスの並び → 音の並び ---------- */
 const KKS = { "合": 60, "乙": 62, "老": 64, "四": 65, "上": 67, "中": 69, "尺": 70, "工": 72, "五": 74, "六": 76, "七": 77, "八": 79, "九": 81 };
 /* boxes: 読む順の配列。各要素 {kind:"empty"|"note", parts:[{label}]}。
    返り値: [{pitch(0=休み), beats, box}]  空きマスは前の音をのばす */
-function toNotes(boxes) {
+/* 調弦：本調子から、どの弦を何半音動かすか。男弦＝合乙老、中弦＝四上中尺、女弦＝工五六七八九 */
+const TUNINGS = {
+  honchoshi: { name: "本調子", shift: {} },
+  niage:     { name: "二揚げ", shift: { "四": 2, "上": 2, "中": 2, "尺": 2 } },
+  ichiage:   { name: "一揚げ", shift: { "合": 2, "乙": 2, "老": 2 } },
+  ichiniage: { name: "一二揚げ", shift: { "合": 2, "乙": 2, "老": 2, "四": 2, "上": 2, "中": 2, "尺": 2 } },
+  sansage:   { name: "三下げ", shift: { "工": -2, "五": -2, "六": -2, "七": -2, "八": -2, "九": -2 } },
+};
+/* 楽譜に書いてある文字（PDFの文字や曲名）から、調弦・拍の数・かかる時間を読む */
+function kanjiNum(t) {
+  if (/^[0-9０-９]+$/.test(t)) return Number(t.replace(/[０-９]/g, d => "０１２３４５６７８９".indexOf(d)));
+  const D = { "〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
+  let total = 0, cur = 0;
+  for (const ch of t) {
+    if (ch in D) cur = cur * 10 + D[ch];
+    else if (ch === "十") { total += (cur || 1) * 10; cur = 0; }
+    else if (ch === "百") { total += (cur || 1) * 100; cur = 0; }
+    else if (ch === "千") { total += (cur || 1) * 1000; cur = 0; }
+  }
+  return total + cur;
+}
+function parseScoreText(text) {
+  const t = (text || "").replace(/\s+/g, ""), out = {};
+  if (/一二揚|一二上/.test(t)) out.tuning = "ichiniage";
+  else if (/二揚|二上/.test(t)) out.tuning = "niage";
+  else if (/一揚|一上/.test(t)) out.tuning = "ichiage";
+  else if (/三下/.test(t)) out.tuning = "sansage";
+  else if (/本調子/.test(t)) out.tuning = "honchoshi";
+  const N = "[〇零一二三四五六七八九十百千0-9０-９]+";
+  const b = t.match(new RegExp("(" + N + ")拍子")); if (b) out.beats = kanjiNum(b[1]);
+  const m = t.match(new RegExp("(?:所用|所要)時間[^（）()]*?(?:(" + N + ")分)?(" + N + ")秒"));
+  if (m) out.seconds = (m[1] ? kanjiNum(m[1]) * 60 : 0) + kanjiNum(m[2]);
+  return out;
+}
+function toNotes(boxes, tuning) {
+  const sh = (TUNINGS[tuning] || TUNINGS.honchoshi).shift;
   let last = -1; boxes.forEach((b, i) => { if (b.kind !== "empty") last = i; });
   const notes = [];
   for (let i = 0; i <= last; i++) {
@@ -351,11 +562,11 @@ function toNotes(boxes) {
       continue;
     }
     const k = b.parts.length, d = 1 / k;
-    b.parts.forEach((p, j) => notes.push({ pitch: p.label === "〇" ? 0 : (KKS[p.label] || 0), beats: d, box: i, part: j }));
+    b.parts.forEach((p, j) => notes.push({ pitch: p.label === "〇" || !KKS[p.label] ? 0 : KKS[p.label] + (sh[p.label] || 0), beats: d, box: i, part: j }));
   }
   return notes;
 }
 
-root.KKS_ENGINE = { SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
+root.KKS_ENGINE = { TUNINGS, parseScoreText, kanjiNum, findBookGrid, sampleBox, readBook, readAny, SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
   sampleCell, inner, inkMask, normalize, loadNet, classify, readCell, readSheet, toNotes, KKS };
 })(typeof window !== "undefined" ? window : globalThis);

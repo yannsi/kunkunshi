@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>工工四を撮ると鳴る</title>
-<meta name="description" content="紙に書いた工工四をスマホで撮ると、三線の音で弾いてくれます。">
+<meta name="description" content="工工四を撮るか、PDFを入れると、三線の音で弾きます。三線を弾けなくても、どんな曲か聞けます。">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#1f2b45">
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
@@ -38,7 +38,8 @@ body {
   font-family: var(--font-ui); font-size: 16px; line-height: 1.7;
   padding: env(safe-area-inset-top, 0) max(16px, env(safe-area-inset-right, 0)) calc(96px + env(safe-area-inset-bottom, 0)) max(16px, env(safe-area-inset-left, 0));
 }
-.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 22px; padding-top: 22px; }
+.wrap { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding-top: 22px; }
+.wrap > * { min-width: 0; }
 h1 { font-family: var(--font-fude); font-weight: 600; font-size: clamp(1.9rem, 8vw, 2.4rem); line-height: 1.25; margin: 0; letter-spacing: 0.04em; }
 .lead { margin: 6px 0 0; color: var(--on-ai-dim); font-size: 0.95rem; }
 button, .btn { font: inherit; cursor: pointer; }
@@ -77,6 +78,10 @@ button, .btn { font: inherit; cursor: pointer; }
 .box .p.on, .box.on:not(.multi) { background: var(--kiiro); }
 .box.hold.on { background: #fbe7a8; }
 .empty-note { font-size: 0.85rem; color: var(--usu); margin: 10px 2px 0; }
+.tuning { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 0.85rem; color: var(--usu); margin: 0 2px 12px; }
+.tuning select { font: inherit; font-size: 0.95rem; color: var(--sumi); background: #fff; border: 1.5px solid var(--keisen); border-radius: 8px; padding: 6px 28px 6px 10px; min-height: 40px; color-scheme: light; }
+.tuning select:focus-visible { outline: 3px solid var(--kiiro); outline-offset: 2px; }
+.tuning span { font-size: 0.78rem; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.78rem; color: var(--usu); margin: 10px 2px 0; }
 .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--beni); margin-right: 5px; transform: translateY(-1px); }
 .legend i.g { background: #3f8f5a; }
@@ -108,7 +113,8 @@ dialog p { margin: 0 0 12px; font-size: 0.85rem; color: var(--usu); }
 .dlg-foot input { width: 20px; height: 20px; accent-color: var(--sumi); }
 .dlg-foot button { min-height: 44px; padding: 0 20px; border-radius: 10px; border: 0; background: var(--sumi); color: var(--kami); font-weight: 700; }
 
-.how { color: var(--on-ai-dim); font-size: 0.88rem; margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+.how { color: var(--on-ai-dim); font-size: 0.88rem; margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+.how b { color: var(--on-ai); }
 footer { font-size: 0.8rem; color: var(--on-ai-dim); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
 footer a { color: var(--on-ai-dim); }
 .photo { display: none; width: 100%; border-radius: 6px; }
@@ -120,7 +126,7 @@ footer a { color: var(--on-ai-dim); }
 <div class="wrap">
   <header>
     <h1>工工四を撮ると鳴る</h1>
-    <p class="lead">紙に書いた工工四をスマホで撮ると、三線の音で弾きます。読み取りはこの端末の中だけで行い、写真はどこにも送りません。</p>
+    <p class="lead">工工四をスマホで撮るか、PDFを入れると、三線の音で弾きます。三線を弾けなくても、どんな曲か聞けます。読み取りはこの端末の中だけで行い、写真やPDFはどこにも送りません。</p>
   </header>
 
   <section class="actions" aria-label="撮る">
@@ -129,8 +135,8 @@ footer a { color: var(--on-ai-dim); }
       工工四を撮る
     </label>
     <input id="cam" class="vh" type="file" accept="image/*" capture="environment">
-    <label class="btn" for="pic">写真から選ぶ</label>
-    <input id="pic" class="vh" type="file" accept="image/*">
+    <label class="btn" for="pic">写真・PDFを選ぶ</label>
+    <input id="pic" class="vh" type="file" accept="image/*,application/pdf,.pdf">
     <a class="btn" href="youshi.html">用紙を印刷する</a>
   </section>
   <div class="sub">
@@ -144,19 +150,29 @@ footer a { color: var(--on-ai-dim); }
       <h2 id="scoreTitle">読み取った工工四</h2>
       <p id="scoreInfo">右の列から、上から下へ</p>
     </div>
+    <label class="tuning">調弦
+      <select id="tuning">
+        <option value="honchoshi">本調子</option>
+        <option value="niage">二揚げ</option>
+        <option value="ichiage">一揚げ</option>
+        <option value="ichiniage">一二揚げ</option>
+        <option value="sansage">三下げ</option>
+      </select>
+      <span id="tuningNote"></span>
+    </label>
     <div class="score" id="score"></div>
-    <p class="empty-note" id="emptyNote">まだ何も読んでいません。用紙に書いて撮るか、「見本の写真で試す」を押してください。マスをタップすると字を入れたり直したりできます。</p>
+    <p class="empty-note" id="emptyNote">まだ何も読んでいません。工工四のPDFや写真を入れるか、「見本の写真で試す」を押してください。マスをタップすると字を入れたり直したりできます。</p>
     <div class="legend" id="legend" hidden><span><i></i>読みに自信がないマス</span><span><i class="g"></i>手で直したマス</span><span>マスをタップで直せます</span></div>
   </section>
 
-  <ol class="how">
-    <li>「用紙を印刷する」で用紙を出し、黒か青のペンで書きます。</li>
-    <li>1マスが1拍です。〇は休み、何も書かないマスは前の音をのばします。縦に2つ書くと半拍ずつになります。</li>
-    <li>四隅の黒い四角が全部写るように、真上から撮ってください。</li>
-  </ol>
+  <ul class="how">
+    <li><b>工工四のPDF</b>：ダウンロードしたPDFを「写真・PDFを選ぶ」から入れます。いちばん確実です。曲名・調弦・速さも、楽譜に書いてあれば合わせます。</li>
+    <li><b>本や楽譜の写真</b>：マス目が全部入るように、正面からまっすぐ撮ります。調弦は楽譜の表記（「二揚」など）を見て選んでください。</li>
+    <li><b>自分で書く</b>：「用紙を印刷する」で用紙を出して書きます。1マス＝1拍、〇＝休み、空きマス＝前の音をのばす、縦に2つで半拍ずつ。四隅の黒い四角が写るように撮ります。</li>
+  </ul>
 
   <footer>
-    <span>本調子・合＝ド で鳴らします　試作版 0.1.2</span>
+    <span>合＝ド で鳴らします　試作版 0.2.0</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -168,7 +184,7 @@ footer a { color: var(--on-ai-dim); }
     </button>
     <label class="tempo">
       <span>速さ　<b id="tempoVal">100</b>（1分に打つ拍の数）</span>
-      <input type="range" id="tempo" min="50" max="180" step="5" value="100">
+      <input type="range" id="tempo" min="40" max="200" step="1" value="100">
     </label>
   </div>
 </div>
@@ -506,6 +522,25 @@ function readCell(cell) {
 }
 
 /* ---------- 写真全体を読む ---------- */
+/* 見つけた4点が本当に用紙の目印か確かめる：中は黒く、まわりは白く、左上だけ中心が白い */
+function verifySheet(img, H) {
+  const { g, w, h } = img;
+  const at = (x, y) => { const [u, v] = project(H, x, y); const xi = Math.round(u), yi = Math.round(v);
+    return xi < 0 || yi < 0 || xi >= w || yi >= h ? null : g[yi * w + xi]; };
+  let okAll = true;
+  SHEET.mark.centers.forEach(([cx, cy], i) => {
+    const ring = [], inside = [];
+    for (let k = 0; k < 16; k++) { const a = k / 16 * 2 * Math.PI; ring.push(at(cx + 8 * Math.cos(a), cy + 8 * Math.sin(a))); }
+    for (const dx of [-3.5, 0, 3.5]) for (const dy of [-3.5, 0, 3.5]) { if (i === 0 && dx === 0 && dy === 0) continue; inside.push(at(cx + dx, cy + dy)); }
+    if (ring.concat(inside).some(v => v == null)) { okAll = false; return; }
+    const paper = ring.slice().sort((a, b) => a - b)[8];
+    const darkIn = inside.filter(v => v < paper * 0.6).length / inside.length;
+    const lightRing = ring.filter(v => v > paper * 0.75).length / ring.length;
+    let hole = true; if (i === 0) hole = at(cx, cy) > paper * 0.7;
+    if (darkIn < 0.85 || lightRing < 0.75 || !hole) okAll = false;
+  });
+  return okAll;
+}
 function readSheet(rgba, w, h) {
   const gray = toGray(rgba, w, h);
   const small = downscale(gray, w, h, 1000);
@@ -514,6 +549,7 @@ function readSheet(rgba, w, h) {
   const big = downscale(gray, w, h, 2400);
   const pts = found.pts.map(([x, y]) => [x / small.s * big.s, y / small.s * big.s]);
   const H = homography(SHEET.mark.centers, pts);
+  if (!verifySheet(big, H)) return { ok: false, reason: "marks" };
   const cells = [];
   for (let c = 0; c < SHEET.cols; c++) for (let r = 0; r < SHEET.rows; r++) {
     const res = readCell(sampleCell(big, H, c, r));
@@ -522,11 +558,202 @@ function readSheet(rgba, w, h) {
   return { ok: true, cells, corners: pts.map(([x, y]) => [x / big.s, y / big.s]), H, scale: big.s };
 }
 
+/* ---------- 本・PDFの工工四を読む（目印なし。マス目の線を探す） ---------- */
+function findBookGrid(g, w, h) {
+  // 暗い点：周りの明るさより暗い所（写真の明るさむらに負けないよう、広めの窓で比べる）
+  const win = Math.max(15, Math.round(Math.max(w, h) / 60)) | 1, r = win >> 1;
+  const I = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) { let row = 0;
+    for (let x = 0; x < w; x++) { row += g[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; } }
+  const dark = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) { const ya = Math.max(0, y - r), yb = Math.min(h, y + r + 1);
+    for (let x = 0; x < w; x++) { const xa = Math.max(0, x - r), xb = Math.min(w, x + r + 1);
+      const mean = (I[yb * (w + 1) + xb] - I[ya * (w + 1) + xb] - I[yb * (w + 1) + xa] + I[ya * (w + 1) + xa]) / ((yb - ya) * (xb - xa));
+      dark[y * w + x] = g[y * w + x] < Math.min(mean * 0.93, mean - 0.05) ? 1 : 0; } }  // 写真では細い線が薄くなるので、わずかな暗さも拾う
+  // 縦線：上下に長く続く暗い列（2点までの切れ目は許す）
+  const minRun = h * 0.2, vcols = [];
+  for (let x = 0; x < w; x++) {
+    let best = 0, bs = 0, cur = 0, cs = 0, gap = 0;
+    for (let y = 0; y < h; y++) {
+      const d = dark[y * w + x] || (x > 0 && dark[y * w + x - 1]) || (x < w - 1 && dark[y * w + x + 1]);
+      if (d) { if (cur === 0) cs = y; cur += 1 + gap; gap = 0; if (cur > best) { best = cur; bs = cs; } }
+      else if (cur > 0 && gap < 2) gap++; else { cur = 0; gap = 0; }
+    }
+    if (best >= minRun) vcols.push({ x, y0: bs, y1: bs + best });
+  }
+  const vlines = [];
+  for (const v of vcols) {
+    const L = vlines[vlines.length - 1];
+    if (L && v.x - L.xe <= 2) { L.xe = v.x; L.y0 = Math.min(L.y0, v.y0); L.y1 = Math.max(L.y1, v.y1); L.n++; L.sx += v.x; }
+    else vlines.push({ xs: v.x, xe: v.x, y0: v.y0, y1: v.y1, n: 1, sx: v.x });
+  }
+  vlines.forEach(L => L.x = L.sx / L.n);
+  // となり合う縦線の間に、横線が何本も規則正しく入っていれば、それが音のマスの列
+  const cols = [];
+  for (let i = 0; i + 1 < vlines.length; i++) {
+    const A = vlines[i], B = vlines[i + 1], bw = B.x - A.x;
+    if (bw < w * 0.012 || bw > w * 0.15) continue;
+    const y0 = Math.max(A.y0, B.y0), y1 = Math.min(A.y1, B.y1); if (y1 - y0 < minRun) continue;
+    const xa = Math.round(A.xe + 2), xb = Math.round(B.xs - 2); if (xb - xa < 4) continue;
+    const rows = [];
+    for (let y = Math.max(0, y0 - 3); y <= Math.min(h - 1, y1 + 3); y++) {
+      let n = 0; for (let x = xa; x <= xb; x++) n += dark[y * w + x] || (y > 0 && dark[(y - 1) * w + x]) ? 1 : 0;
+      if (n >= (xb - xa + 1) * 0.85) rows.push(y);
+    }
+    const hl = [];
+    for (const y of rows) { const L = hl[hl.length - 1]; if (L && y - L.e <= 2) { L.e = y; } else hl.push({ s: y, e: y }); }
+    const ys = hl.map(o => (o.s + o.e) / 2);
+    if (ys.length < 5) continue;
+    const gaps = []; for (let k = 1; k < ys.length; k++) gaps.push(ys[k] - ys[k - 1]);
+    const med = gaps.slice().sort((a, b) => a - b)[gaps.length >> 1];
+    if (med < bw * 0.5 || med > bw * 3) continue;
+    const boxes = [];
+    for (let k = 1; k < ys.length; k++) {
+      const gh = ys[k] - ys[k - 1];
+      if (gh < med * 0.6) continue;              // 二重線などの細いすき間
+      const n = Math.max(1, Math.round(gh / med)); // 線が消えて2マスつながって見えるとき
+      for (let j = 0; j < n; j++) boxes.push({ x0: A.x, x1: B.x, y0: ys[k - 1] + gh * j / n, y1: ys[k - 1] + gh * (j + 1) / n });
+    }
+    if (boxes.length >= 4) cols.push({ x: (A.x + B.x) / 2, boxes });
+  }
+  cols.sort((a, b) => b.x - a.x);  // 右から読む
+  // 線がかすれて見つからなかったマスは、いちばん近い「全部そろった列」の高さに合わせて補う
+  const full = Math.max(0, ...cols.map(c => c.boxes.length)), refs = cols.filter(c => c.boxes.length === full);
+  for (const col of cols) {
+    if (col.boxes.length === full) continue;
+    const ref = refs.reduce((a, b) => Math.abs(b.x - col.x) < Math.abs(a.x - col.x) ? b : a);
+    const x0 = col.boxes[0].x0, x1 = col.boxes[0].x1;
+    col.boxes = ref.boxes.map(rb => {
+      const ry = (rb.y0 + rb.y1) / 2, rh = rb.y1 - rb.y0;
+      const own = col.boxes.find(b => Math.abs((b.y0 + b.y1) / 2 - ry) < rh * 0.4);
+      return own || { x0, x1, y0: rb.y0, y1: rb.y1, guessed: true };
+    });
+  }
+  return cols;
+}
+function sampleBox(img, b) {
+  // マスの中心に、短い辺の長さの正方形をとって CELL x CELL にする
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, side = Math.min(b.x1 - b.x0, b.y1 - b.y0);
+  const out = new Float32Array(CELL * CELL), { g, w, h } = img, k = side / CELL;
+  for (let j = 0; j < CELL; j++) for (let i = 0; i < CELL; i++) {
+    const u = cx - side / 2 + (i + 0.5) * k - 0.5, v = cy - side / 2 + (j + 0.5) * k - 0.5;
+    const x = Math.max(0, Math.min(w - 1.001, u)), y = Math.max(0, Math.min(h - 1.001, v));
+    const xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi, p = yi * w + xi;
+    out[j * CELL + i] = g[p] * (1 - fx) * (1 - fy) + g[p + 1] * fx * (1 - fy) + g[p + w] * (1 - fx) * fy + g[p + w + 1] * fx * fy;
+  }
+  return out;
+}
+/* 斜めの写真を直す：縦線がまっすぐ縦にそろう「回転」と「上下のすぼまり（台形）」を探して、その逆をかける */
+function rectifyBook(img) {
+  const sm = downscale(img.g, img.w, img.h, 800), { g, w, h } = sm;
+  const pts = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const v = g[y * w + x], l = g[y * w + x - 1], r = g[y * w + x + 1];
+    if (v < l - 0.04 && v < r - 0.04) pts.push(x, y);   // 左右より暗い＝縦の線の上の点
+  }
+  if (pts.length < 200) return null;
+  const xc = w / 2, yc = h / 2, bins = new Float32Array(w * 3);
+  const score = (th, k) => {
+    bins.fill(0); const c = Math.cos(th), s = Math.sin(th);
+    for (let i = 0; i < pts.length; i += 2) {
+      const dx = pts[i] - xc, dy = pts[i + 1] - yc, xr = c * dx + s * dy, yr = -s * dx + c * dy;
+      const u = xr / (1 + k * yr / h) + w * 1.5; const b = u | 0; if (b >= 0 && b < bins.length) bins[b]++;
+    }
+    let e = 0; for (let i = 0; i < bins.length; i++) e += bins[i] * bins[i]; return e;
+  };
+  let best = { th: 0, k: 0, e: score(0, 0) }; const e0 = best.e;
+  for (let th = -8; th <= 8; th += 0.5) for (let k = -0.2; k <= 0.2001; k += 0.025) {
+    const e = score(th * Math.PI / 180, k); if (e > best.e) best = { th: th * Math.PI / 180, k, e }; }
+  for (const [dt, dk] of [[0.2, 0.01], [0.08, 0.004], [0.03, 0.0015]]) {
+    const b0 = best;
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+      const th = b0.th + a * dt * Math.PI / 180, k = b0.k + b * dk, e = score(th, k); if (e > best.e) best = { th, k, e }; }
+  }
+  if (Math.abs(best.th) < 0.002 && Math.abs(best.k) < 0.003) return null;
+  if (best.e < e0 * 1.05) return null;
+  // 直した画像を作る（元の大きさで）
+  const W = img.w, H = img.h, Xc = W / 2, Yc = H / 2, out = new Float32Array(W * H);
+  const c = Math.cos(best.th), sn = Math.sin(best.th), src = img.g;
+  for (let v = 0; v < H; v++) for (let u = 0; u < W; u++) {
+    const yr = v - Yc, xr = (u - Xc) * (1 + best.k * yr / H);
+    const x = c * xr - sn * yr + Xc, y = sn * xr + c * yr + Yc;
+    if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) { out[v * W + u] = 1; continue; }
+    const xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi, p = yi * W + xi;
+    out[v * W + u] = src[p] * (1 - fx) * (1 - fy) + src[p + 1] * fx * (1 - fy) + src[p + W] * (1 - fx) * fy + src[p + W + 1] * fx * fy;
+  }
+  return { g: out, w: W, h: H, s: img.s, th: best.th, k: best.k };
+}
+function readBook(rgba, w, h) {
+  const gray = toGray(rgba, w, h);
+  let img = downscale(gray, w, h, 2400);
+  let cols = findBookGrid(img.g, img.w, img.h);
+  // 斜めに写っていれば直して探し直し、マスが多く見つかった方を使う
+  const fixed = rectifyBook(img);
+  if (fixed) {
+    const c2 = findBookGrid(fixed.g, fixed.w, fixed.h), n = cs => cs.reduce((a, c) => a + c.boxes.length, 0);
+    if (n(c2) > n(cols)) { img = fixed; cols = c2; }
+  }
+  if (!cols.length) return { ok: false, reason: "grid" };
+  const rows = Math.max(...cols.map(c => c.boxes.length)), cells = [];
+  cols.forEach((col, c) => {
+    for (let r = 0; r < rows; r++) {
+      const b = col.boxes[r];
+      const res = b ? readCell(sampleBox(img, b)) : { kind: "empty", parts: [], ink: 0 };
+      res.c = c; res.r = r; cells.push(res);
+    }
+  });
+  return { ok: true, cells, cols: cols.length, rows, scale: img.s,
+    grid: cols.map(c => c.boxes.map(b => [b.x0 / img.s, b.y0 / img.s, b.x1 / img.s, b.y1 / img.s])) };
+}
+/* 写真1枚を読む：まず専用の用紙（四隅の目印）、なければ本のマス目として読む */
+function readAny(rgba, w, h) {
+  const a = readSheet(rgba, w, h);
+  if (a.ok) { a.kind = "sheet"; a.cols = SHEET.cols; a.rows = SHEET.rows; return a; }
+  const b = readBook(rgba, w, h);
+  if (b.ok) b.kind = "book";
+  return b;
+}
+
 /* ---------- マスの並び → 音の並び ---------- */
 const KKS = { "合": 60, "乙": 62, "老": 64, "四": 65, "上": 67, "中": 69, "尺": 70, "工": 72, "五": 74, "六": 76, "七": 77, "八": 79, "九": 81 };
 /* boxes: 読む順の配列。各要素 {kind:"empty"|"note", parts:[{label}]}。
    返り値: [{pitch(0=休み), beats, box}]  空きマスは前の音をのばす */
-function toNotes(boxes) {
+/* 調弦：本調子から、どの弦を何半音動かすか。男弦＝合乙老、中弦＝四上中尺、女弦＝工五六七八九 */
+const TUNINGS = {
+  honchoshi: { name: "本調子", shift: {} },
+  niage:     { name: "二揚げ", shift: { "四": 2, "上": 2, "中": 2, "尺": 2 } },
+  ichiage:   { name: "一揚げ", shift: { "合": 2, "乙": 2, "老": 2 } },
+  ichiniage: { name: "一二揚げ", shift: { "合": 2, "乙": 2, "老": 2, "四": 2, "上": 2, "中": 2, "尺": 2 } },
+  sansage:   { name: "三下げ", shift: { "工": -2, "五": -2, "六": -2, "七": -2, "八": -2, "九": -2 } },
+};
+/* 楽譜に書いてある文字（PDFの文字や曲名）から、調弦・拍の数・かかる時間を読む */
+function kanjiNum(t) {
+  if (/^[0-9０-９]+$/.test(t)) return Number(t.replace(/[０-９]/g, d => "０１２３４５６７８９".indexOf(d)));
+  const D = { "〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
+  let total = 0, cur = 0;
+  for (const ch of t) {
+    if (ch in D) cur = cur * 10 + D[ch];
+    else if (ch === "十") { total += (cur || 1) * 10; cur = 0; }
+    else if (ch === "百") { total += (cur || 1) * 100; cur = 0; }
+    else if (ch === "千") { total += (cur || 1) * 1000; cur = 0; }
+  }
+  return total + cur;
+}
+function parseScoreText(text) {
+  const t = (text || "").replace(/\s+/g, ""), out = {};
+  if (/一二揚|一二上/.test(t)) out.tuning = "ichiniage";
+  else if (/二揚|二上/.test(t)) out.tuning = "niage";
+  else if (/一揚|一上/.test(t)) out.tuning = "ichiage";
+  else if (/三下/.test(t)) out.tuning = "sansage";
+  else if (/本調子/.test(t)) out.tuning = "honchoshi";
+  const N = "[〇零一二三四五六七八九十百千0-9０-９]+";
+  const b = t.match(new RegExp("(" + N + ")拍子")); if (b) out.beats = kanjiNum(b[1]);
+  const m = t.match(new RegExp("(?:所用|所要)時間[^（）()]*?(?:(" + N + ")分)?(" + N + ")秒"));
+  if (m) out.seconds = (m[1] ? kanjiNum(m[1]) * 60 : 0) + kanjiNum(m[2]);
+  return out;
+}
+function toNotes(boxes, tuning) {
+  const sh = (TUNINGS[tuning] || TUNINGS.honchoshi).shift;
   let last = -1; boxes.forEach((b, i) => { if (b.kind !== "empty") last = i; });
   const notes = [];
   for (let i = 0; i <= last; i++) {
@@ -536,12 +763,12 @@ function toNotes(boxes) {
       continue;
     }
     const k = b.parts.length, d = 1 / k;
-    b.parts.forEach((p, j) => notes.push({ pitch: p.label === "〇" ? 0 : (KKS[p.label] || 0), beats: d, box: i, part: j }));
+    b.parts.forEach((p, j) => notes.push({ pitch: p.label === "〇" || !KKS[p.label] ? 0 : KKS[p.label] + (sh[p.label] || 0), beats: d, box: i, part: j }));
   }
   return notes;
 }
 
-root.KKS_ENGINE = { SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
+root.KKS_ENGINE = { TUNINGS, parseScoreText, kanjiNum, findBookGrid, sampleBox, readBook, readAny, SHEET, LABELS, CELL, MARGIN, INK_MIN, boxOrigin, toGray, downscale, findMarkers, homography, project,
   sampleCell, inner, inkMask, normalize, loadNet, classify, readCell, readSheet, toNotes, KKS };
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
@@ -552,23 +779,27 @@ const E = window.KKS_ENGINE, S = E.SHEET;
 E.loadNet(window.KKS_MODEL);
 const $ = id => document.getElementById(id);
 const CHARS = ["合","乙","老","四","上","中","尺","工","五","六","七","八","九"];
-const NAMES = { "合":"ド","乙":"レ","老":"ミ","四":"ファ","上":"ソ","中":"ラ","尺":"シ♭","工":"ド","五":"レ","六":"ミ","七":"ファ","八":"ソ","九":"ラ" };
-let boxes = blank(); // 読む順に84マス
+const PITCH_NAMES = ["ド","ド♯","レ","ミ♭","ミ","ファ","ファ♯","ソ","ソ♯","ラ","シ♭","シ"];
+function noteName(ch) { const sh = (E.TUNINGS[$("tuning").value] || E.TUNINGS.honchoshi).shift; return PITCH_NAMES[(E.KKS[ch] + (sh[ch] || 0)) % 12]; }
+let layout = { kind: "sheet", cols: S.cols, rows: S.rows };
+let boxes = blank(); // 読む順（右の列から、上から下へ）
 let unsureSet = new Set(), fixedSet = new Set();
 
-function blank() { return Array.from({ length: S.cols * S.rows }, () => ({ kind: "empty", parts: [] })); }
+function blank() { return Array.from({ length: layout.cols * layout.rows }, () => ({ kind: "empty", parts: [] })); }
 function setStatus(t, err) { const s = $("status"); s.textContent = t; s.classList.toggle("err", !!err); }
 
 /* ---------- 楽譜を描く ---------- */
 function lastUsed() { let l = -1; boxes.forEach((b, i) => { if (b.kind !== "empty") l = i; }); return l; }
 function render() {
   const sc = $("score"); sc.innerHTML = "";
-  const last = lastUsed(), nCols = Math.max(1, Math.min(S.cols, Math.floor(last / S.rows) + 2));
+  const R = layout.rows, last = lastUsed();
+  const nCols = layout.kind === "sheet" ? Math.max(1, Math.min(layout.cols, Math.floor(last / R) + 2)) : Math.max(1, Math.floor(last / R) + 1);
   for (let c = 0; c < nCols; c++) {
     const col = document.createElement("div"); col.className = "col";
+    col.style.gridTemplateRows = `auto repeat(${R}, auto)`;
     col.innerHTML = `<div class="colno">${c + 1}</div>`;
-    for (let r = 0; r < S.rows; r++) {
-      const i = c * S.rows + r, b = boxes[i], el = document.createElement("button");
+    for (let r = 0; r < R; r++) {
+      const i = c * R + r, b = boxes[i], el = document.createElement("button");
       el.type = "button"; el.className = "box"; el.dataset.i = i;
       if (b.kind === "note") {
         if (b.parts.length === 1) { el.innerHTML = `<span class="p">${b.parts[0].label}</span>`; }
@@ -585,15 +816,15 @@ function render() {
   const any = last >= 0;
   $("emptyNote").hidden = any; $("legend").hidden = !any;
   $("play").disabled = !any;
-  const n = E.toNotes(boxes).length;
-  $("scoreInfo").textContent = any ? `${n}音・右の列から、上から下へ` : "右の列から、上から下へ";
+  const notes = E.toNotes(boxes, $("tuning").value), beats = notes.reduce((a, n) => a + n.beats, 0);
+  $("scoreInfo").textContent = any ? `${beats}拍・右の列から、上から下へ` : "右の列から、上から下へ";
 }
 
 /* ---------- 字を直す ---------- */
 let editing = -1, twoSel = [];
 function buildPicks() {
   const p = $("picks"); p.innerHTML = "";
-  const opts = CHARS.map(c => [c, c, NAMES[c]]).concat([["〇", "〇", "休み"], ["", "空き", "前の音をのばす"]]);
+  const opts = CHARS.map(c => [c, c, noteName(c)]).concat([["〇", "〇", "休み"], ["", "空き", "前の音をのばす"]]);
   for (const [v, t, name] of opts) {
     const b = document.createElement("button"); b.type = "button"; b.className = "pick" + (v === "" ? " word" : "");
     b.textContent = t; b.dataset.v = v; b.setAttribute("aria-label", v === "" ? "空きにする" : `${t}（${name}）`);
@@ -611,7 +842,8 @@ function syncPicks() {
 }
 function openPicker(i) {
   stop(); editing = i; twoSel = [];
-  const b = boxes[i], c = Math.floor(i / S.rows) + 1, r = i % S.rows + 1;
+  buildPicks();
+  const b = boxes[i], c = Math.floor(i / layout.rows) + 1, r = i % layout.rows + 1;
   $("dlgTitle").textContent = `${c}列目・${r}マス目の字`;
   $("twoMode").checked = b.parts.length === 2;
   syncPicks(); $("dlg").showModal();
@@ -634,37 +866,95 @@ $("twoMode").addEventListener("change", () => { twoSel = []; syncPicks(); });
 $("dlgClose").addEventListener("click", () => $("dlg").close());
 $("dlg").addEventListener("click", e => { if (e.target === $("dlg")) $("dlg").close(); });
 
-/* ---------- 写真を読む ---------- */
+/* ---------- 写真・PDFを読む ---------- */
+const tick0 = () => new Promise(r => setTimeout(r, 30));
 async function readFile(file) {
   stop();
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name || "")) return readPdf(file);
   setStatus("写真を開いています…");
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
   catch (e) {
     try { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); }); }
-    catch (e2) { setStatus("この写真は開けませんでした。JPEGかPNGの写真で試してください。", true); return; }
+    catch (e2) { setStatus("この写真は開けませんでした。JPEGかPNGの写真、またはPDFで試してください。", true); return; }
   }
-  await readImage(bmp);
-}
-async function readImage(bmp) {
-  setStatus("工工四を読んでいます…");
-  await new Promise(r => setTimeout(r, 30));
+  setStatus("工工四を読んでいます…"); await tick0();
   const w0 = bmp.width, h0 = bmp.height, k = Math.min(1, 2400 / Math.max(w0, h0));
   const w = Math.round(w0 * k), h = Math.round(h0 * k);
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
   const cx = cv.getContext("2d", { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, w, h);
-  const t0 = performance.now();
-  const res = E.readSheet(cx.getImageData(0, 0, w, h).data, w, h);
+  const t0 = performance.now(), res = E.readAny(cx.getImageData(0, 0, w, h).data, w, h);
   if (!res.ok) {
-    setStatus("用紙の四隅の黒い四角が見つかりませんでした。4つとも写るように、明るい所で真上から撮り直してください。", true);
+    setStatus("工工四のマス目が見つかりませんでした。マス目が全部入るように、明るい所で正面から撮り直してください。自分で書いた用紙なら、四隅の黒い四角が4つとも写るようにしてください。", true);
     return;
   }
-  boxes = res.cells.map(c => ({ kind: c.kind, parts: c.parts.map(p => ({ label: p.label, conf: p.conf })) }));
+  show([res], {}, performance.now() - t0);
+}
+let pdfLib = null;
+async function readPdf(file) {
+  setStatus("PDFを開いています…");
+  try {
+    if (!pdfLib) {
+      pdfLib = await import("./vendor/pdfjs/pdf.min.mjs");
+      pdfLib.GlobalWorkerOptions.workerSrc = new URL("vendor/pdfjs/pdf.worker.min.mjs", location.href).href;
+    }
+    const doc = await pdfLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false,
+      cMapUrl: new URL("vendor/pdfjs/cmaps/", location.href).href, cMapPacked: true,
+      standardFontDataUrl: new URL("vendor/pdfjs/standard_fonts/", location.href).href }).promise;
+    let text = "", title = "";
+    try { const m = await doc.getMetadata(); title = (m.info && m.info.Title) || ""; } catch (e) {}
+    const pages = Math.min(doc.numPages, 10), results = [], t0 = performance.now();
+    for (let n = 1; n <= pages; n++) {
+      setStatus(`工工四を読んでいます…（${n}/${pages}ページ）`); await tick0();
+      const page = await doc.getPage(n);
+      try { const tc = await page.getTextContent(); text += tc.items.map(it => it.str).join(""); } catch (e) {}
+      const v1 = page.getViewport({ scale: 1 }), sc = 2400 / Math.max(v1.width, v1.height), vp = page.getViewport({ scale: sc });
+      const cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const cx = cv.getContext("2d", { willReadFrequently: true }); cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: cx, viewport: vp }).promise;
+      const res = E.readAny(cx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height);
+      if (res.ok) results.push(res);
+    }
+    if (!results.length) { setStatus("このPDFの中に、工工四のマス目が見つかりませんでした。", true); return; }
+    const info = E.parseScoreText(title + text);
+    info.title = title.replace(/[\[［(（].*?[\]］)）]/g, "").trim();
+    show(results, info, performance.now() - t0);
+  } catch (e) {
+    console.error(e);
+    setStatus("このPDFは開けませんでした。鍵のかかったPDFや壊れたPDFかもしれません。ページを写真に撮って入れることもできます。", true);
+  }
+}
+/* 読んだ結果（ページごと）をつなげて楽譜にする */
+function show(results, info, ms) {
+  const rows = Math.max(...results.map(r => r.rows)), cells = [];
+  let cols = 0;
+  for (const res of results) {
+    for (let c = 0; c < res.cols; c++) for (let r = 0; r < rows; r++)
+      cells.push(r < res.rows ? res.cells[c * res.rows + r] : { kind: "empty", parts: [] });
+    cols += res.cols;
+  }
+  layout = { kind: results.length === 1 && results[0].kind === "sheet" ? "sheet" : "book", cols, rows };
+  boxes = cells.map(c => ({ kind: c.kind, parts: c.parts.map(p => ({ label: p.label, conf: p.conf })) }));
   unsureSet = new Set(); fixedSet = new Set();
-  res.cells.forEach((c, i) => { if (c.kind === "note" && c.parts.some(p => p.conf < 0.85)) unsureSet.add(i); });
+  cells.forEach((c, i) => { if (c.kind === "note" && c.parts.some(p => p.conf < 0.85)) unsureSet.add(i); });
+  const said = [];
+  if (info.title) { $("scoreTitle").textContent = info.title; said.push(`曲名「${info.title}」`); }
+  else $("scoreTitle").textContent = "読み取った工工四";
+  if (info.tuning) { $("tuning").value = info.tuning; $("tuningNote").textContent = "楽譜の表記から選びました"; said.push(`調弦は${E.TUNINGS[info.tuning].name}`); }
+  else $("tuningNote").textContent = layout.kind === "book" ? "楽譜の表記（「二揚」など）を見て選んでください" : "";
+  const beats = E.toNotes(boxes, $("tuning").value).reduce((a, n) => a + n.beats, 0);
+  if (info.seconds && beats) {
+    const bpm = Math.max(40, Math.min(200, Math.round(beats * 60 / info.seconds)));
+    $("tempo").value = bpm; $("tempoVal").textContent = bpm; said.push(`速さは楽譜の所要時間（${info.seconds}秒）に合わせて1分に${bpm}拍`);
+  }
   render();
-  const n = boxes.filter(b => b.kind !== "empty").length, u = unsureSet.size;
-  setStatus(`${n}マス読みました（${Math.round(performance.now() - t0)}ミリ秒）。` + (u ? `赤い点の${u}マスは読みに自信がありません。違っていたらタップして直してください。` : "▶で弾けます。"));
+  let msg = `${beats}拍読みました（${(ms / 1000).toFixed(1)}秒）。`;
+  if (info.beats && info.beats !== beats) msg += `楽譜には${info.beats}拍とあるので、どこかが違うかもしれません。`;
+  else if (info.beats) msg += `楽譜に書いてある${info.beats}拍と合っています。`;
+  if (said.length) msg += said.join("、") + "にしました。";
+  const u = unsureSet.size;
+  msg += u ? `赤い点の${u}マスは読みに自信がありません。違っていたらタップして直してください。` : "▶で弾けます。";
+  setStatus(msg);
 }
 $("cam").addEventListener("change", e => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; });
 $("pic").addEventListener("change", e => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; });
@@ -674,6 +964,7 @@ $("sample").addEventListener("click", async () => {
     const r = await fetch("sample.jpg"); const bl = await r.blob(); await readFile(bl);
   } catch (e) { setStatus("見本の写真を開けませんでした。ネットにつながっているか確かめてください。", true); }
 });
+$("tuning").addEventListener("change", () => { stop(); $("tuningNote").textContent = ""; render(); });
 
 /* ---------- 三線の音 ---------- */
 function sanshin(out, s0, f, len, sr) {
@@ -741,7 +1032,7 @@ function nowPlaying() {
 }
 function play() {
   if (playing) { stop(); return; }
-  const notes = E.toNotes(boxes); if (!notes.length) return;
+  const notes = E.toNotes(boxes, $("tuning").value); if (!notes.length) return;
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
   const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(notes, sr, beat);
   playing = true;
