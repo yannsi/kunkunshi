@@ -222,7 +222,7 @@ footer a { color: var(--on-ai-dim); }
   </ul>
 
   <footer>
-    <span>合＝ド で鳴らします　試作版 0.5.1</span>
+    <span>合＝ド で鳴らします　試作版 0.6.0</span>
     <a href="https://yannsi.github.io/">yannsi工作室</a>
   </footer>
 </div>
@@ -265,8 +265,8 @@ footer a { color: var(--on-ai-dim); }
   </div>
 </dialog>
 
-<script>/*ENGINE*/</script>
-<script>/*MODEL*/</script>
+<script id="engineSrc">/*ENGINE*/</script>
+<script id="modelSrc">/*MODEL*/</script>
 <script>
 "use strict";
 const E = window.KKS_ENGINE, S = E.SHEET;
@@ -365,22 +365,58 @@ $("dlg").addEventListener("click", e => { if (e.target === $("dlg")) $("dlg").cl
 
 /* ---------- 写真・PDFを読む ---------- */
 const tick0 = () => new Promise(r => setTimeout(r, 30));
+/* 読み取りは裏（別のスレッド）で行い、その間も画面が固まらないようにする。
+   裏で動かせない端末では、これまでどおり表で読む */
+let reader = null, readerOk = true, jobNo = 0; const jobs = new Map();
+function startReader() {
+  if (reader || !readerOk) return reader;
+  try {
+    const main = "KKS_ENGINE.loadNet(self.KKS_MODEL);onmessage=function(e){var d=e.data;try{postMessage({id:d.id,res:KKS_ENGINE.readAny(new Uint8ClampedArray(d.buf),d.w,d.h,d.max)});}catch(err){postMessage({id:d.id,err:String(err)});}};";
+    const url = URL.createObjectURL(new Blob(["var window=self;\n", $("engineSrc").textContent, "\n", $("modelSrc").textContent, "\n", main], { type: "text/javascript" }));
+    reader = new Worker(url);
+    reader.onmessage = e => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); e.data.err ? j.rej(new Error(e.data.err)) : j.res(e.data.res); };
+    reader.onerror = () => { readerOk = false; reader = null; jobs.forEach(j => j.rej(new Error("reader"))); jobs.clear(); };
+  } catch (e) { readerOk = false; reader = null; }
+  return reader;
+}
+/* cx: 画像を描いたキャンバス。裏で読めなかったときは、同じ画像を表で読み直す */
+async function readCanvas(cx, w, h, max) {
+  if (startReader()) {
+    try {
+      const d = cx.getImageData(0, 0, w, h).data, id = ++jobNo;
+      return await new Promise((res, rej) => { jobs.set(id, { res, rej }); reader.postMessage({ id, buf: d.buffer, w, h, max }, [d.buffer]); });
+    } catch (e) { readerOk = false; if (reader) { try { reader.terminate(); } catch (e2) {} reader = null; } jobs.clear(); }
+  }
+  await tick0();
+  return E.readAny(cx.getImageData(0, 0, w, h).data, w, h, max);
+}
+const freeCanvas = cv => { cv.width = 0; cv.height = 0; };   // iPhoneはキャンバスのメモリに上限があるので、使い終わったらすぐ手放す
+let readSeq = 0;   // 読んでいる間に別のファイルが選ばれたら、古い方の結果は捨てる
 async function readFile(file) {
   stop();
-  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name || "")) return readPdf(file);
+  const seq = ++readSeq;
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name || "")) return readPdf(file, seq);
   setStatus("写真を開いています…");
-  let bmp;
+  let bmp, tmpUrl = null;
   try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
   catch (e) {
-    try { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); }); }
-    catch (e2) { setStatus("この写真は開けませんでした。JPEGかPNGの写真、またはPDFで試してください。", true); return; }
+    try { tmpUrl = URL.createObjectURL(file); bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = tmpUrl; }); }
+    catch (e2) { if (tmpUrl) URL.revokeObjectURL(tmpUrl); setStatus("この写真は開けませんでした。JPEGかPNGの写真、またはPDFで試してください。", true); return; }
   }
+  if (seq !== readSeq) { if (bmp.close) bmp.close(); if (tmpUrl) URL.revokeObjectURL(tmpUrl); return; }
   setStatus("工工四を読んでいます…"); await tick0();
   const w0 = bmp.width, h0 = bmp.height, k = Math.min(1, 2400 / Math.max(w0, h0));
   const w = Math.round(w0 * k), h = Math.round(h0 * k);
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
   const cx = cv.getContext("2d", { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, w, h);
-  const t0 = performance.now(), res = E.readAny(cx.getImageData(0, 0, w, h).data, w, h);
+  if (bmp.close) bmp.close();            // 元の大きな写真はもう使わない
+  if (tmpUrl) URL.revokeObjectURL(tmpUrl);
+  const t0 = performance.now();
+  let res;
+  try { res = await readCanvas(cx, w, h); }
+  catch (e) { console.error(e); if (seq === readSeq) setStatus("読み取りの途中で止まりました。もう一度試してください。", true); return; }
+  finally { freeCanvas(cv); }
+  if (seq !== readSeq) return;
   if (!res.ok) {
     setStatus("工工四のマス目が見つかりませんでした。マス目が全部入るように、明るい所で正面から撮り直してください。自分で書いた用紙なら、四隅の黒い四角が4つとも写るようにしてください。", true);
     return;
@@ -388,37 +424,48 @@ async function readFile(file) {
   show([res], {}, performance.now() - t0);
 }
 let pdfLib = null;
-async function readPdf(file) {
+const PDF_MAX_PAGES = 10;
+async function readPdf(file, seq) {
   setStatus("PDFを開いています…");
+  let task = null;
   try {
     if (!pdfLib) {
       pdfLib = await import("./vendor/pdfjs/pdf.min.mjs");
       pdfLib.GlobalWorkerOptions.workerSrc = new URL("vendor/pdfjs/pdf.worker.min.mjs", location.href).href;
     }
-    const doc = await pdfLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false,
+    task = pdfLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false,
       cMapUrl: new URL("vendor/pdfjs/cmaps/", location.href).href, cMapPacked: true,
-      standardFontDataUrl: new URL("vendor/pdfjs/standard_fonts/", location.href).href }).promise;
+      standardFontDataUrl: new URL("vendor/pdfjs/standard_fonts/", location.href).href });
+    const doc = await task.promise;
     let text = "", title = "";
     try { const m = await doc.getMetadata(); title = (m.info && m.info.Title) || ""; } catch (e) {}
-    const pages = Math.min(doc.numPages, 10), results = [], t0 = performance.now();
+    const pages = Math.min(doc.numPages, PDF_MAX_PAGES), results = [], t0 = performance.now();
     for (let n = 1; n <= pages; n++) {
+      if (seq !== readSeq) return;
       setStatus(`工工四を読んでいます…（${n}/${pages}ページ）`); await tick0();
       const page = await doc.getPage(n);
       try { const tc = await page.getTextContent(); text += tc.items.map(it => it.str).join(""); } catch (e) {}
       const v1 = page.getViewport({ scale: 1 }), sc = 3200 / Math.max(v1.width, v1.height), vp = page.getViewport({ scale: sc }); // 小さな字も読めるよう細かめに
       const cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
       const cx = cv.getContext("2d", { willReadFrequently: true }); cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
-      await page.render({ canvasContext: cx, viewport: vp }).promise;
-      const res = E.readAny(cx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, 3200);
+      let res;
+      try {
+        await page.render({ canvasContext: cx, viewport: vp }).promise;
+        res = await readCanvas(cx, cv.width, cv.height, 3200);
+      } finally { freeCanvas(cv); try { page.cleanup(); } catch (e) {} }
       if (res.ok) results.push(res);
     }
+    if (seq !== readSeq) return;
     if (!results.length) { setStatus("このPDFの中に、工工四のマス目が見つかりませんでした。", true); return; }
     const info = E.parseScoreText(title + text);
     info.title = title.replace(/[\[［(（].*?[\]］)）]/g, "").trim();
+    if (doc.numPages > pages) info.note = `このPDFは${doc.numPages}ページあります。はじめの${pages}ページだけ読みました。`;
     show(results, info, performance.now() - t0);
   } catch (e) {
     console.error(e);
-    setStatus("このPDFは開けませんでした。鍵のかかったPDFや壊れたPDFかもしれません。ページを写真に撮って入れることもできます。", true);
+    if (seq === readSeq) setStatus("このPDFは開けませんでした。鍵のかかったPDFや壊れたPDFかもしれません。ページを写真に撮って入れることもできます。", true);
+  } finally {
+    if (task) { try { task.destroy(); } catch (e) {} }   // 読み終えたPDFは手放す
   }
 }
 /* 読んだ結果（ページごと）をつなげて楽譜にする */
@@ -452,6 +499,7 @@ function show(results, info, ms) {
   } else { $("tempo").value = 100; $("tempoVal").textContent = 100; }
   render();
   let msg = `${written}拍読みました（${(ms / 1000).toFixed(1)}秒）。`;
+  if (info.note) msg += info.note;
   if (info.beats && info.beats !== written) msg += `楽譜には${info.beats}拍とあるので、どこかが違うかもしれません。`;
   else if (info.beats) msg += `楽譜に書いてある${info.beats}拍と合っています。`;
   if (repeats.length) msg += `矢印の間をくり返して、全部で${beats}拍弾きます。`;
@@ -496,13 +544,36 @@ function sanshin(out, s0, f, len, sr, gain) {
 /* iPhoneの消音スイッチが入っていても鳴るよう、WAVにして audio 要素で鳴らす（声のQRと同じ）。
    audio 要素が使えないときだけ Web Audio で鳴らす */
 let audioEl = null, lastUrl = null, ctx = null, webSrc = null, webStart = 0, playing = false, raf = 0, timeline = [];
-function wavBlob(f, sr) {
-  const n = f.length, buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+function wavFromPcm(pcm, sr) {
+  const n = pcm.length, head = new ArrayBuffer(44), dv = new DataView(head);
   const w = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
   w(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
   dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, "data"); dv.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(f[i] * 32767))), true);
-  return new Blob([buf], { type: "audio/wav" });
+  return new Blob([head, pcm], { type: "audio/wav" });
+}
+/* 1回分の音 one を、hop サンプルずつずらして times 回重ね、いちばん大きい所が0.8になるようにそろえて16ビットにする。
+   （曲全体を何回分も作り直さないので、長い曲を何回も通すときに速く、メモリも少ない） */
+function mixPcm(one, hop, times) {
+  const L = one.length, tail = L - hop, N = hop * (times - 1) + L, pcm = new Int16Array(N);
+  if (times > 1 && tail > hop) {
+    // とても短い曲（余韻の方が長い）：1点ずつ重ねて計算する
+    const at = i => { let v = 0; for (let k = Math.min(times - 1, (i / hop) | 0), j = i - k * hop; k >= 0 && j < L; k--, j += hop) v += one[j]; return v; };
+    let pk = 0; for (let i = 0; i < N; i++) { const a = Math.abs(at(i)); if (a > pk) pk = a; }
+    const g = pk > 0 ? 0.8 / pk * 32767 : 0; for (let i = 0; i < N; i++) pcm[i] = Math.round(at(i) * g);
+    return pcm;
+  }
+  // 2回目からは、出だしに前の回の余韻が重なる。重なった所もふくめて、いちばん大きい所を探す
+  let pk = 0;
+  for (let i = 0; i < L; i++) { const a = Math.abs(one[i]); if (a > pk) pk = a; }
+  if (times > 1) for (let j = 0; j < tail; j++) { const a = Math.abs(one[j] + one[hop + j]); if (a > pk) pk = a; }
+  const g = pk > 0 ? 0.8 / pk * 32767 : 0;
+  for (let i = 0; i < L; i++) pcm[i] = Math.round(one[i] * g);                       // 1回目（余韻つき）
+  if (times > 1) {
+    const mid = new Int16Array(L);                                                    // 2回目から：出だしに余韻を足した形
+    for (let i = 0; i < L; i++) mid[i] = Math.round((one[i] + (i < tail ? one[hop + i] : 0)) * g);
+    for (let k = 1; k < times; k++) pcm.set(mid, k * hop);                            // 同じ形をずらして置く（最後の回の余韻で終わる）
+  }
+  return pcm;
 }
 function stop() {
   playing = false;
@@ -513,25 +584,26 @@ function stop() {
   $("playIcon").innerHTML = '<path d="M7 4.5v15l13-7.5z"/>';
 }
 function clearMarks() { document.querySelectorAll(".on").forEach(el => el.classList.remove("on")); }
-function renderSound(notes, sr, beat) {
+function renderSound(notes, sr, beat, times) {
   let total = 0; notes.forEach(n => total += n.beats * beat);
-  const out = new Float32Array(Math.ceil((total + 1.2) * sr));
-  let t = 0; timeline = [];
+  const one = new Float32Array(Math.ceil((total + 1.2) * sr)), tl = [];
+  let t = 0;
   for (const n of notes) {
     const len = n.beats * beat;
-    if (n.pitch > 0) sanshin(out, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch + baseShift() - 69) / 12), len, sr, n.soft ? 0.55 : 1);
-    timeline.push({ t, end: t + len, box: n.box, part: n.part, beats: n.beats });
+    if (n.pitch > 0) sanshin(one, Math.floor(t * sr), 440 * Math.pow(2, (n.pitch + baseShift() - 69) / 12), len, sr, n.soft ? 0.55 : 1);
+    tl.push({ t, end: t + len, box: n.box, part: n.part, beats: n.beats });
     t += len;
   }
-  let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
-  if (pk > 0) for (let i = 0; i < out.length; i++) out[i] *= 0.8 / pk;
-  return out;
+  const hop = Math.max(1, Math.round(total * sr));
+  timeline = [];
+  for (let k = 0; k < times; k++) { const off = k * hop / sr; for (const e of tl) timeline.push({ t: e.t + off, end: e.end + off, box: e.box, part: e.part, beats: e.beats }); }
+  return mixPcm(one, hop, times);
 }
-function playWeb(f, sr) {
+function playWeb(pcm, sr) {
   try {
     ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === "suspended") ctx.resume();
-    const ab = ctx.createBuffer(1, f.length, sr); ab.getChannelData(0).set(f);
+    const ab = ctx.createBuffer(1, pcm.length, sr), ch = ab.getChannelData(0); for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32767;
     webSrc = ctx.createBufferSource(); webSrc.buffer = ab; webSrc.connect(ctx.destination);
     webStart = ctx.currentTime + 0.05; webSrc.start(webStart);
     webSrc.onended = () => { if (playing) stop(); };
@@ -544,14 +616,13 @@ function nowPlaying() {
 function play() {
   if (playing) { stop(); return; }
   const once = E.toNotes(boxes, $("tuning").value, activeRepeats()); if (!once.length) return;
-  const notes = []; for (let k = 0; k < Number($("times").value); k++) notes.push(...once);
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
-  const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(notes, sr, beat);
+  const sr = 44100, beat = 60 / Number($("tempo").value), f = renderSound(once, sr, beat, Number($("times").value));
   playing = true;
   // 押したその場で play() を呼ぶ（間に待ちを入れると、iPhoneでは鳴らせなくなる）
   if (!audioEl) { audioEl = new Audio(); audioEl.preload = "auto"; audioEl.setAttribute("playsinline", ""); }
   if (lastUrl) URL.revokeObjectURL(lastUrl);
-  lastUrl = URL.createObjectURL(wavBlob(f, sr));
+  lastUrl = URL.createObjectURL(wavFromPcm(f, sr));
   audioEl.src = lastUrl;
   audioEl.onended = () => { if (playing) stop(); };
   const pr = audioEl.play();
@@ -610,13 +681,12 @@ function playTone(st) {
   // 1回だけはじいて、長めに響かせる（もう一度聞きたいときは、また押す）
   const sr = 44100, out = new Float32Array(Math.ceil(2.6 * sr));
   sanshin(out, 0, st.freq, 2.0, sr, 1);
-  let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
-  for (let i = 0; i < out.length; i++) out[i] *= 0.8 / pk;
+  const pcm = mixPcm(out, out.length, 1);
   try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
   if (!audioEl) { audioEl = new Audio(); audioEl.preload = "auto"; audioEl.setAttribute("playsinline", ""); }
   if (lastUrl) URL.revokeObjectURL(lastUrl);
-  lastUrl = URL.createObjectURL(wavBlob(out, sr)); audioEl.src = lastUrl; audioEl.onended = null;
-  const pr = audioEl.play(); if (pr && pr.catch) pr.catch(() => playWeb(out, sr));
+  lastUrl = URL.createObjectURL(wavFromPcm(pcm, sr)); audioEl.src = lastUrl; audioEl.onended = null;
+  const pr = audioEl.play(); if (pr && pr.catch) pr.catch(() => playWeb(pcm, sr));
 }
 /* マイクの音の高さ（YINという方法で、波形が何サンプルごとにくり返すかを探す） */
 function detectPitch(buf, sr) {

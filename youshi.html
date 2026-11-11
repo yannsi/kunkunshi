@@ -216,15 +216,19 @@ function inner(cell) {
   return out;
 }
 function filt1d(a, w, h, size, horiz, op) {
-  const r = size >> 1, out = new Float32Array(a.length);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    let acc = op === "max" ? -Infinity : 0;
-    for (let k = -r; k <= r; k++) {
-      const xx = horiz ? Math.min(w - 1, Math.max(0, x + k)) : x, yy = horiz ? y : Math.min(h - 1, Math.max(0, y + k));
-      const v = a[yy * w + xx];
-      if (op === "max") { if (v > acc) acc = v; } else acc += v;
+  // 1行（または1列）ずつ、端をのばした控えを作ってから窓をすべらせる（端の扱いを毎回調べないので速い。結果は同じ）
+  const r = size >> 1, out = new Float32Array(a.length), isMax = op === "max";
+  const n = horiz ? w : h, lines = horiz ? h : w, step = horiz ? 1 : w, lstep = horiz ? w : 1;
+  const tmp = new Float32Array(n + 2 * r);
+  for (let l = 0; l < lines; l++) {
+    const base = l * lstep;
+    for (let i = 0; i < n + 2 * r; i++) tmp[i] = a[base + Math.min(n - 1, Math.max(0, i - r)) * step];
+    for (let i = 0; i < n; i++) {
+      let acc;
+      if (isMax) { acc = -Infinity; for (let k = 0; k < size; k++) { const v = tmp[i + k]; if (v > acc) acc = v; } }
+      else { acc = 0; for (let k = 0; k < size; k++) acc += tmp[i + k]; acc /= size; }
+      out[base + i * step] = acc;
     }
-    out[y * w + x] = op === "max" ? acc : acc / size;
   }
   return out;
 }
@@ -406,8 +410,8 @@ function verifySheet(img, H) {
   });
   return okAll;
 }
-function readSheet(rgba, w, h) {
-  const gray = toGray(rgba, w, h);
+function readSheet(rgba, w, h, gray) {
+  gray = gray || toGray(rgba, w, h);
   const small = downscale(gray, w, h, 1000);
   const found = findMarkers(small.g, small.w, small.h);
   if (!found) return { ok: false, reason: "marks" };
@@ -597,6 +601,13 @@ function readSmall(img, b) {
   const tries = [base];
   if (a >= 0) {
     const ra = Math.max(0, a - 2), rz = Math.min(CELL - 1, z + 2);
+    // 小さな字は線にまたがって書かれるので、線のすぐ上とすぐ下の両方にインクがあるはず。
+    // 片方にしかなければ、上のマスの字の下の端や、下のマスの字の上の端が帯に入っただけなので読まない
+    const NEAR = 6, x0n = MARGIN + 3, x1n = CELL - MARGIN - 3;
+    const inkNear = (r0, r1) => { let n = 0;
+      for (let r = Math.max(0, r0); r <= Math.min(CELL - 1, r1); r++) for (let x = x0n; x < x1n; x++) if (base[r * CELL + x] < paper - 0.25) n++;
+      return n; };
+    if (inkNear(ra - NEAR, ra - 1) < 3 || inkNear(rz + 1, rz + NEAR) < 3) return null;
     // 字の左右の広がり：線の上下にインクがある列
     let gx0 = CELL, gx1 = -1;
     for (let x = MARGIN + 3; x < CELL * 0.62; x++) {   // 右側の印（「 など）は含めない
@@ -619,8 +630,8 @@ function readSmall(img, b) {
   }
   return best && best.conf >= 0.5 ? best : null;
 }
-function readBook(rgba, w, h, maxSide) {
-  const gray = toGray(rgba, w, h);
+function readBook(rgba, w, h, maxSide, gray) {
+  gray = gray || toGray(rgba, w, h);
   let img = downscale(gray, w, h, maxSide || 2400);
   let cols = findBookGrid(img.g, img.w, img.h);
   // 斜めに写っていれば直して探し直し、マスが多く見つかった方を使う
@@ -656,9 +667,10 @@ function readBook(rgba, w, h, maxSide) {
 }
 /* 写真1枚を読む：まず専用の用紙（四隅の目印）、なければ本のマス目として読む */
 function readAny(rgba, w, h, maxSide) {
-  const a = readSheet(rgba, w, h);
+  const gray = toGray(rgba, w, h);
+  const a = readSheet(rgba, w, h, gray);
   if (a.ok) { a.kind = "sheet"; a.cols = SHEET.cols; a.rows = SHEET.rows; return a; }
-  const b = readBook(rgba, w, h, maxSide);
+  const b = readBook(rgba, w, h, maxSide, gray);
   if (b.ok) b.kind = "book";
   return b;
 }
